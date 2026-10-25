@@ -9,7 +9,7 @@
 <title>BuildHouse</title>
 <!-- Заранее открываем соединение с сервером: экономит 100–300 мс на первом запросе -->
 <link rel="preconnect" href="https://telegram-miniapp-1-4egc.onrender.com">
-<link rel="stylesheet" href="./style.css?v=9">
+<link rel="stylesheet" href="./style.css?v=10">
 </head>
 <body>
 <div class="wrap">
@@ -31,7 +31,7 @@
 <script>
 /* ============ Загрузчик с диагностикой. Не зависит от внешних файлов: работает, даже если app.js или telegram.org недоступны ============ */
 (function () {
-  var VER = '9', T0 = Date.now(), LOG = [];
+  var VER = '10', T0 = Date.now(), LOG = [];
   var ICON = {ok: '✅', wait: '⏳', fail: '❌', warn: '⚠️'};
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }

@@ -256,7 +256,7 @@ function houseSvg(lv) {
 }
 
 /* ---------- 5. Экраны ---------- */
-const NAV = [['home', '🏠', 'Дом'], ['games', '🎮', 'Игры'], ['cases', '📦', 'Кейсы'], ['top', '🏆', 'Топ'], ['shop', '⭐', 'Магазин'], ['profile', '👤', 'Я']];
+const NAV = [['home', '🏠', 'Дом'], ['profile', '👤', 'Я']];
 
 /** Перерисовывает шапку с балансом, нижнее меню и текущий экран. */
 function paint() {
@@ -266,7 +266,7 @@ function paint() {
   $('gems').textContent = inf(S.gems);
   const items = S.is_admin ? [...NAV, ['admin', '🛡️', 'Админ']] : NAV;
   $('nav').innerHTML = items.map(([k, i, t]) => `<button class="${k === tab ? 'on' : ''}" onclick="go('${k}')"><b>${i}</b>${t}</button>`).join('');
-  const views = {home: homeV, games: gamesV, cases: casesV, top: topV, shop: shopV, profile: profileV, admin: () => window.Admin ? Admin.view() : '<div class="panel splash"><div class="spin"></div>Загрузка панели…</div>'};
+  const views = {home: homeV, profile: profileV, admin: () => window.Admin ? Admin.view() : '<div class="panel splash"><div class="spin"></div>Загрузка панели…</div>'};
   $('view').innerHTML = views[tab]();
 }
 
@@ -275,8 +275,7 @@ function homeV() {
   const h = S.house;
   const upgrade = h.next_cost
     ? `<p class="m">Уровень ${h.level + 1}: доход $${fmt(h.next_income)}/час</p>
-       <div class="row"><button class="ghost" style="flex:1;padding:15px" onclick="upgrade()" ${S.player.coins < h.next_cost ? 'disabled' : ''}>За $${fmt(h.next_cost)}</button>
-       <button style="flex:1;padding:15px" onclick="go('shop')">За ⭐${h.next_stars}</button></div>`
+       <div class="row"><button class="ghost" style="flex:1;padding:15px" onclick="upgrade()" ${S.player.coins < h.next_cost ? 'disabled' : ''}>За $${fmt(h.next_cost)}</button></div>`
     : '<p>👑 Максимальный уровень!</p>';
   return `<div class="panel house">${houseSvg(h.level)}
       <h2 style="margin:10px 0 4px">${esc(h.name)} · уровень ${h.level} / ${h.max}</h2>
@@ -286,96 +285,13 @@ function homeV() {
       <button id="claim" class="full" onclick="claim()">Забрать</button></div>
     <div class="panel"><h2>⬆️ Прокачка</h2>${upgrade}</div>
     <div class="cards">
-      <div class="card" onclick="go('games')"><i>🎮</i>Играть</div>
-      <div class="card" onclick="go('cases')"><i>📦</i>Кейсы</div>
-      <div class="card" onclick="daily()"><i>🎁</i>Бонус<small>${S.daily_ready ? `$${100 * h.level} + ⭐1` : 'завтра'}</small></div>
-      <div class="card" onclick="go('top')"><i>🏆</i>Рейтинг</div></div>`;
+      <div class="card" onclick="daily()"><i>🎁</i>Бонус<small>${S.daily_ready ? `$${100 * h.level} + ⭐1` : 'завтра'}</small></div></div>`;
 }
 
-/** Меню игр и подэкраны «Стройка» / «Мины». */
-function gamesV() {
-  const back = `<button class="ghost sm" onclick="sub=null;paint()">← Игры</button>`;
-  if (sub === 'work') return back + workV();
-  if (sub === 'mines') return back + minesV();
-  return `<div class="panel"><h2>🎮 Меню игр</h2><div class="cards">
-    <div class="card" onclick="sub='mines';paint()"><i>💣</i>Мины<small>ставки до $50 000</small></div>
-    <div class="card" onclick="sub='work';paint()"><i>🔨</i>Стройка<small>кликер, энергия</small></div>
-    <div class="card" onclick="go('cases')"><i>📦</i>Кейсы<small>выбей машину</small></div>
-    <div class="card" onclick="daily()"><i>🎁</i>Бонус<small>каждый день</small></div></div></div>`;
-}
-
-/** Кликер: тап = (1 + уровень дома) долларов, тратит энергию. */
-function workV() {
-  return `<div class="panel"><h2>🔨 Стройка</h2><p class="m">Тап = $${1 + S.house.level}. Энергия ${S.energy}/${S.max_energy}</p>
-    <div class="prog"><i style="width:${S.energy / S.max_energy * 100}%"></i></div>
-    <button class="full" onclick="tapWork()" ${S.energy < 1 ? 'disabled' : ''}>🔨 РАБОТАТЬ</button></div>`;
-}
-
-/** «Мины»: настройка ставки, поле 5×5, кнопка «Забрать». */
-function minesV() {
-  const playing = game?.status === 'playing', m = cfg.m;
-  const lastOpened = game?.order?.[game.order.length - 1];        // последняя открытая клетка — подсветим, если на ней мина
-  const cells = game ? game.cells.map((c, i) =>
-    `<button class="cell ${c === 'closed' ? '' : c} ${game.status === 'lost' && i === lastOpened ? 'hit' : ''}" onclick="openCell(${i})" ${c !== 'closed' || !playing ? 'disabled' : ''}>${c === 'mine' ? '💣' : c === 'safe' ? '💎' : ''}</button>`).join('') : '';
-  const setup = playing ? '' : `<div class="panel"><h2>⚙️ Настройка</h2><p class="m">Ставка ($)</p>
-    <div class="row">${BETS.map(b => `<button class="chip ${cfg.bet === b ? 'on' : ''}" onclick="cfg.bet=${b};paint()">${fmt(b)}</button>`).join('')}</div>
-    <p class="m" style="margin-top:12px">Мин на поле: <b id="mc">${m}</b> · коэффициент за 1-ю клетку: <b id="mm" class="ok">x${mult(1, m)}</b></p>
-    <input type="range" min="1" max="20" value="${m}" oninput="cfg.m=+this.value;$('mc').textContent=this.value;$('mm').textContent='x'+mult(1,+this.value)">
-    <button class="full" style="margin-top:12px" onclick="startMines()" ${S.player.coins < cfg.bet ? 'disabled' : ''}>Играть на $${fmt(cfg.bet)}</button>
-    <p class="m">Проигрыш — ставка сгорает. Забрать выигрыш можно после любой открытой клетки.</p></div>`;
-  const info = !game ? '' : playing
-    ? `<p>Коэф. <b class="ok">x${game.mult}</b> · следующий x${game.next ?? '—'} · мин: ${game.mines}</p>
-       <button class="full" onclick="cash()">${game.opened ? `Забрать $${fmt(game.payout)}` : 'Вернуть ставку'}</button>`
-    : game.status === 'lost' ? `<p class="bad">💣 Мина! Ставка $${fmt(game.bet)} сгорела.</p>` : `<p class="ok">🏆 Забрано $${fmt(game.payout)} (x${game.mult})</p>`;
-  return `${setup}${game ? `<div class="panel"><h2>💣 Мины · ставка $${fmt(game.bet)}</h2>${info}<div class="grid">${cells}</div></div>` : ''}`;
-}
-
-/** Кейсы и гараж. */
-function casesV() {
-  if (!gar) return '<div class="panel splash"><div class="spin"></div>Загрузка…</div>';
-  const cases = Object.entries(gar.cases).map(([k, c]) => {
-    const best = c.drops.reduce((a, d) => d.value > a.value ? d : a, c.drops[0]);
-    return `<div class="panel"><div class="row"><div style="flex:1;min-width:0"><h2 style="margin:0">📦 ${esc(c.name)}</h2>
-      <span class="m">${c.drops.length} машин · лучшая: ${esc(best.name)} ($${fmt(best.value)})</span></div>
-      <button onclick="openCase('${k}')" ${S.player.coins < c.price ? 'disabled' : ''}>$${fmt(c.price)}</button></div>
-      <details><summary>Что может выпасть</summary>${c.drops.map(d => `<p class="m">${esc(d.name)} — $${fmt(d.value)} · ${d.p}%</p>`).join('')}</details></div>`;
-  }).join('');
-  const total = gar.cars.reduce((a, c) => a + c.value, 0);
-  const cars = gar.cars.map(c => `<div class="car"><span>${c.parked ? '🅿️' : '🚗'}</span>
-      <div class="grow"><b>${esc(c.name)}</b><div class="m">$${fmt(c.value)} · +$${fmt(c.bonus)}/час</div></div>
-      <button class="ghost sm" onclick="park(${c.parked ? 0 : c.id})">${c.parked ? 'Снять' : 'Парковка'}</button>
-      <button class="sm" onclick="sell(${c.id})">Продать</button></div>`).join('') || '<p class="m">Пусто — открой кейс!</p>';
-  return `${drop ? `<div class="drop"><div style="font-size:50px">🚗</div><h2>${esc(drop.name)}</h2><p>Стоит $${fmt(drop.value)} · бонус +$${fmt(drop.bonus)}/час</p></div>` : ''}${cases}
-    <div class="panel"><h2>🚘 Гараж (${gar.cars.length}) · $${fmt(total)}</h2><p class="m">Припаркованная машина добавляет доход дома.</p>${cars}</div>`;
-}
-
-/** Рейтинг игроков. */
-function topV() {
-  const medal = i => ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
-  const rows = topData ? topData.top.map(p => `<div class="${p.id === S.player.telegram_id ? 'me' : ''}"><span class="rk">${p.rank <= 3 ? medal(p.rank - 1) : p.rank}</span><span>${esc(p.avatar)}</span><span>${esc(p.name)}</span>
-      <b class="r">${topBy === 'house' ? 'ур. ' + p.house : '$' + fmt(p.coins)}</b></div>`).join('') + `<p class="m">Твоё место: ${topData.me ?? '—'} из ${topData.total}</p>` : '<div class="spin"></div>';
-  return `<div class="panel"><h2>🏆 Рейтинг игроков</h2>
-    <div class="row"><button class="chip ${topBy === 'house' ? 'on' : ''}" onclick="loadTop('house')">🏠 По дому</button><button class="chip ${topBy === 'coins' ? 'on' : ''}" onclick="loadTop('coins')">💵 По деньгам</button></div>
-    <div class="row" style="margin-top:8px"><input id="topq" placeholder="Поиск по нику" value="${esc(topQ)}" onkeydown="if(event.key==='Enter')loadTop(topBy)"><button class="ghost" onclick="loadTop(topBy)">Найти</button></div>
-    <div class="list">${rows}</div></div>`;
-}
-
-/** Магазин: уровень за звёзды и обмен ⭐ → $. */
-function shopV() {
-  const h = S.house, rate = 500 * h.level;
-  return `<div class="panel"><h2>⭐ Магазин</h2><p class="m">У тебя ⭐${inf(S.gems)}. Звёзды можно получать ежедневным бонусом.</p></div>
-    <div class="panel"><h2>🏠 Уровень дома</h2>${h.next_stars
-      ? `<p class="m">Сейчас ${h.level} ур. → ${h.level + 1} ур.</p><button class="full" onclick="buyLevel()" ${S.gems < h.next_stars ? 'disabled' : ''}>Купить за ⭐${h.next_stars}</button>`
-      : '<p>Максимум!</p>'}</div>
-    <div class="panel"><h2>💱 Обмен ⭐ → $</h2><p class="m">Курс: 1 ⭐ = $${fmt(rate)} (растёт с уровнем дома)</p>
-      <div class="row">${[1, 5, 10, 50].map(n => `<button class="ghost" onclick="conv(${n})" ${S.gems < n ? 'disabled' : ''}>${n} ⭐ → $${fmt(n * rate)}</button>`).join('')}</div></div>`;
-}
-
-/** Профиль: статистика, аватар, ник. */
 function profileV() {
   const p = S.player;
   return `<div class="panel" style="text-align:center"><div style="font-size:60px">${esc(S.avatar)}</div><h2>${esc(p.nickname)}</h2><p class="m">ID: ${p.telegram_id}</p></div>
-    <div class="panel"><h2>📊 Статистика</h2><div class="row">${[['🏠 Дом', S.house.level + ' ур.'], ['🎮 Игр', p.games_played], ['🏆 Побед', p.games_won]].map(([a, b]) => `<span class="tag">${a}: <b>${b}</b></span>`).join('')}</div></div>
+    <div class="panel"><h2>📊 Статистика</h2><div class="row">${[['🏠 Дом', S.house.level + ' ур.']].map(([a, b]) => `<span class="tag">${a}: <b>${b}</b></span>`).join('')}</div></div>
     <div class="panel"><h2>🎭 Аватар</h2><div class="row">${AVATARS.map(a => `<button class="${a === S.avatar ? '' : 'ghost'}" style="font-size:22px" onclick="post('avatar',{avatar:'${a}'})">${a}</button>`).join('')}</div></div>
     <div class="panel"><h2>✏️ Ник</h2><div class="row"><input id="nick" maxlength="24" placeholder="Ник (пусто — имя Telegram)" value="${esc(p.custom_nickname || '')}"><button onclick="saveNick()">Сохранить</button></div></div>`;
 }
@@ -384,30 +300,14 @@ function profileV() {
 /** Переход между вкладками + подгрузка данных нужной вкладки. */
 async function go(t) {
   tab = t; sub = null; drop = null; paint();
-  if (t === 'games') run(async () => { game = (await api('/api/bh/mines')).game; paint(); });
-  if (t === 'cases') run(async () => { gar = await api('/api/bh/garage'); paint(); });
-  if (t === 'top') loadTop(topBy);
   if (t === 'admin') run(async () => {
     if (!window.Admin) await loadScript('admin.js?v=' + VER);   // админ-код грузим только админу и только когда он нужен
     await Admin.load();
   });
 }
-const loadTop = by => run(async () => {
-  topBy = by; topQ = $('topq')?.value ?? topQ; topData = null; paint();
-  topData = await api(`/api/bh/top?by=${by}&q=${encodeURIComponent(topQ)}`); paint();
-});
 const claim = () => post('claim').then(r => r?.got && note(`+$${fmt(r.got)}`));            // забрать доход
 const upgrade = () => post('upgrade').then(r => r && note('🎉 Дом улучшен!'));            // улучшить дом за $
-const buyLevel = () => post('buylevel').then(r => r && note('🎉 Уровень куплен!'));       // улучшить дом за ⭐
 const daily = () => post('daily').then(r => r && note(`🎁 +$${fmt(r.got)} и ⭐1`));        // ежедневный бонус
-const conv = n => post('convert', {stars: n}).then(r => r && note(`+$${fmt(r.got)}`));     // обмен звёзд
-const startMines = () => post('mines/start', {bet: cfg.bet, mines: cfg.m});                // начать игру в мины
-const openCell = i => post('mines/open', {cell: i});                                       // открыть клетку
-const cash = () => post('mines/cash').then(r => r && note('✅ Готово'));                   // забрать выигрыш
-const refreshGarage = async () => { gar = await api('/api/bh/garage'); paint(); };         // обновить гараж
-const openCase = c => post('case', {case: c}).then(r => { if (r) { drop = r.car; run(refreshGarage); } });
-const sell = id => post('sell', {id}).then(r => { if (r) { note(`+$${fmt(r.got)}`); run(refreshGarage); } });
-const park = id => post('park', {id}).then(r => { if (r) run(refreshGarage); });
 const saveNick = () => run(async () => {                                                  // сохранить ник
   setS(await api('/api/nickname', {nickname: $('nick').value})); note('✅ Ник сохранён'); paint();
 });

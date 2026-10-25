@@ -21,7 +21,6 @@ from fastapi.responses import FileResponse, Response
 import admin
 import botapp
 import buildhouse
-import games
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
 from db import init_db, session
 
@@ -81,8 +80,7 @@ def health_db():
 
 
 # --------------------------------------------------------------------- API
-app.include_router(buildhouse.router)   # дом, доход, тапы, бонус, ник, аватар
-app.include_router(games.router)        # мины, кейсы, гараж, магазин, рейтинг
+app.include_router(buildhouse.router)   # дом, доход, бонус, ник, аватар
 app.include_router(admin.router)        # админ-панель
 
 # --------------------------------------------------------------------- интерфейс
