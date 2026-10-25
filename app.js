@@ -1,53 +1,37 @@
-/* ============================================================ BuildHouse — клиент (Telegram Mini App)
-   Разделы: 1 настройки и утилиты · 2 запросы к серверу · 3 загрузка · 4 дом (SVG) · 5 экраны · 6 действия */
+/* ============================================================ Viva — клиент (Telegram Mini App)
+   Разделы: 1 настройки и утилиты · 2 запросы к серверу · 3 запуск · 4 экраны · 5 действия
+   Экран загрузки и диагностика живут в index.html (загрузчик), здесь — само приложение. */
+window.__appStarted = true;
 
 /* ---------- 1. Настройки и утилиты ---------- */
-// Адрес API берём из <meta name="api-base"> в index.html (пусто = тот же сервер, что отдал страницу)
 const API_BASE = (document.querySelector('meta[name="api-base"]')?.content || '').trim().replace(/\/$/, '');
-const VER = new URLSearchParams(document.currentScript?.src.split('?')[1] || '').get('v') || '1'; // версия для сброса кэша
-let tg = window.__tg || window.Telegram?.WebApp;                       // объект Telegram WebApp (нет, если открыто в обычном браузере)
-const tgInit = () => { if (tg) { tg.ready(); tg.expand(); tg.disableVerticalSwipes?.(); } };
-tgInit();
-/** Ждёт загрузки telegram-web-app.js (он грузится независимо от app.js и может задержаться). До maxMs мс. */
-async function waitTg(maxMs = 8000) {
-  const t = Date.now();
-  while (!window.__tg && !window.Telegram?.WebApp && Date.now() - t < maxMs) await sleep(100);
-  if (!tg) { tg = window.__tg || window.Telegram?.WebApp; tgInit(); }
-  return !!tg;
-}  // ready() — убирает загрузчик Telegram; expand() — на весь экран
+const VER = new URLSearchParams(document.currentScript?.src.split('?')[1] || '').get('v') || '1';
+let tg = window.__tg || window.Telegram?.WebApp;
+if (tg) { tg.ready?.(); tg.expand?.(); tg.disableVerticalSwipes?.(); }
 
-window.__appStarted = true;
-const $ = id => document.getElementById(id);              // короткий поиск элемента по id
+const dbg = (...a) => window.__dbg && window.__dbg(...a);   // запись в экранную диагностику
+const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fmt = n => Number(n ?? 0).toLocaleString('ru-RU');  // 1234567 -> «1 234 567»
-const inf = n => n >= 1e14 ? '∞' : fmt(n);               // огромные балансы админа показываем как ∞
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); // защита от HTML-инъекций
-const AVATARS = ['🏠', '🔨', '👷', '🏗️', '🦾', '👑', '🐱', '🚀'];
-const BETS = [200, 500, 1000, 3000, 5000, 10000, 50000]; // допустимые ставки в «Минах»
+const fmt = n => Number(n ?? 0).toLocaleString('ru-RU');
+const inf = n => n >= 1e14 ? '∞' : fmt(n);                 // огромные балансы админа показываем как ∞
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const AVATARS = ['🎣', '🐟', '🐠', '🦈', '🐙', '⚓', '🚤', '🦆', '🐳', '🦀'];
+const avatarOf = a => (!a || a === '🏠') ? '🎣' : a;        // у старых игроков стоял 🏠
 
-// Состояние приложения
-let S = null;                    // состояние игрока с сервера (баланс, дом, энергия…)
-let tab = 'home', sub = null;    // текущая вкладка и подэкран («Мины» / «Стройка»)
-let game = null;                 // текущая игра в мины
-let cfg = {bet: 200, m: 3};      // выбранные ставка и число мин
-let gar = null, drop = null;     // гараж/кейсы и последняя выпавшая машина
-let topData = null, topBy = 'house', topQ = ''; // рейтинг
-let busy = false;                // true, пока выполняется запрос (защита от двойных кликов)
-let tapN = 0, tapT = null;       // накопленные тапы «Стройки» и таймер их отправки
-let lastSync = 0;                // когда последний раз получали состояние с сервера
+let S = null;                    // состояние игрока с сервера
+let tab = 'fish', sub = null;    // текущая вкладка (sub нужен админ-панели)
+let busy = false, lastSync = 0;
 
-/** Всплывающее уведомление внизу экрана (исчезает через 4 секунды). */
+/** Всплывающее уведомление внизу экрана. */
 function note(msg) {
   const el = $('status');
   el.textContent = msg;
   clearTimeout(note.t);
   note.t = setTimeout(() => { el.textContent = ''; }, 4000);
 }
-
-/** Подтверждение действия: нативное окно Telegram или обычный confirm. */
+/** Подтверждение: окно Telegram или обычный confirm. */
 const ask = text => new Promise(res => (tg?.showConfirm && tg.isVersionAtLeast?.('6.2')) ? tg.showConfirm(text, res) : res(confirm(text)));
-
-/** Подгружает JS-файл по требованию (админ-панель грузится только админу). */
+/** Подгружает JS по требованию (админ-панель — только администратору). */
 const loadScript = src => new Promise((ok, fail) => {
   const s = document.createElement('script');
   s.src = src; s.onload = ok; s.onerror = () => fail(new Error('Не удалось загрузить ' + src));
@@ -59,11 +43,7 @@ class ApiError extends Error {
   constructor(message, status = 0, retry = false) { super(message); this.status = status; this.retry = retry; }
 }
 
-/**
- * Запрос к API. body === undefined -> GET, иначе POST (JSON).
- * timeout — через сколько мс прервать; retries — сколько раз повторить GET при сетевой ошибке / 502-504.
- * Именно отсутствие таймаута раньше давало «вечную загрузку»: fetch ждал ответ спящего сервера бесконечно.
- */
+/** Запрос к API. body === undefined -> GET, иначе POST (JSON). У каждого запроса есть таймаут. */
 async function api(path, body, {timeout = 15000, retries = 0} = {}) {
   if (!tg?.initData) throw new ApiError('Открой приложение кнопкой «Открыть» в Telegram, а не в браузере.');
   const init = {
@@ -72,32 +52,29 @@ async function api(path, body, {timeout = 15000, retries = 0} = {}) {
     body: body === undefined ? undefined : JSON.stringify(body)};
   for (let attempt = 0; ; attempt++) {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), timeout);       // прервать запрос по таймеру
+    const timer = setTimeout(() => ctl.abort(), timeout);
     try {
       const r = await fetch(API_BASE + path, {...init, signal: ctl.signal});
       const j = await r.json().catch(() => ({}));
       if (r.ok) return j;
       const msg = typeof j.detail === 'string' ? j.detail : `Ошибка сервера ${r.status}`;
-      throw new ApiError(msg, r.status, r.status >= 502 && r.status <= 504); // 502–504 = сервер просыпается
+      throw new ApiError(msg, r.status, r.status >= 502 && r.status <= 504);
     } catch (e) {
       const err = e instanceof ApiError ? e
-        : new ApiError(e.name === 'AbortError' ? 'Сервер долго не отвечает.' : 'Нет связи с сервером (Render мог уснуть — подожди минуту).', 0, true);
-      if (!err.retry || attempt >= retries || body !== undefined) throw err; // POST не повторяем: можно потратить деньги дважды
+        : new ApiError(e.name === 'AbortError' ? 'Сервер долго не отвечает.' : 'Нет связи с сервером (он мог уснуть — подожди минуту).', 0, true);
+      if (!err.retry || attempt >= retries || body !== undefined) throw err;   // POST не повторяем
       await sleep(1500 * (attempt + 1));
     } finally { clearTimeout(timer); }
   }
 }
 
-/** Выполняет функцию и показывает ошибку уведомлением (вместо падения скрипта). */
+/** Выполняет функцию и показывает ошибку уведомлением. */
 const run = async fn => { try { return await fn(); } catch (e) { note('⚠️ ' + e.message); } };
 
 /** Принимает свежее состояние от сервера. */
-function setS(r) {
-  S = r; S.t0 = Date.now(); lastSync = Date.now();
-  if (r.game !== undefined) game = r.game;
-}
+function setS(r) { S = r; lastSync = Date.now(); }
 
-/** POST к /api/bh/<path>: блокирует повторные клики, обновляет состояние и экран. Возвращает ответ или null. */
+/** POST к /api/bh/<path>: блокирует повторные клики, обновляет состояние и экран. */
 async function post(path, body = {}) {
   if (busy) return null;
   busy = true; document.body.classList.add('busy');
@@ -105,40 +82,12 @@ async function post(path, body = {}) {
   try { r = await api('/api/bh/' + path, body); setS(r); }
   catch (e) { note('⚠️ ' + e.message); }
   finally { busy = false; document.body.classList.remove('busy'); }
-  paint();                                                       // перерисовываем в любом случае — снимает блокировку кнопок
+  paint();
   return r;
 }
 
-/** Коэффициент мин (та же формула, что на сервере) — для подсказки до начала игры. */
-const mult = (k, m) => { let p = .97; for (let i = 0; i < k; i++) p *= (25 - i) / (25 - m - i); return Math.round(p * 100) / 100; };
-
-/* ---------- 3. Загрузка (без зависаний) ---------- */
-const splash = msg => { $('view').innerHTML = `<div class="panel splash"><div class="spin"></div><div>${esc(msg)}</div></div>`; };
-
-/**
- * Запуск приложения с ДИАГНОСТИКОЙ: на экране по шагам видно, что проверено и где именно ломается.
- * Шаги: JS -> Telegram -> адрес API -> /health (будим сервер) -> /health/db -> /api/bh/state (авторизация).
- */
-const DIAG = [];
-function diagShow(title = 'Диагностика запуска') {
-  const icon = {ok: '✅', fail: '❌', wait: '⏳', warn: '⚠️'};
-  const waiting = DIAG.some(d => d.s === 'wait');   // пока идёт проверка — привычная заставка со спиннером
-  $('view').innerHTML = `<div class="panel${waiting ? ' splash' : ''}">${waiting ? '<div class="spin"></div>' : ''}<h2>${esc(waiting ? 'Загрузка…' : title)}</h2>` +
-    DIAG.map(d => `<p style="margin:6px 0;text-align:left">${icon[d.s]} <b>${esc(d.name)}</b><br><small style="opacity:.8">${esc(d.msg)}</small></p>`).join('') + '</div>';
-}
-function diagStep(name) {
-  const d = {name, s: 'wait', msg: 'проверяем…'};
-  DIAG.push(d); diagShow();
-  return (s, msg) => { d.s = s; d.msg = msg; diagShow(); return s === 'ok'; };
-}
-const diagReport = () => DIAG.map(d => `${d.s.toUpperCase()} ${d.name}: ${d.msg}`).join('\n') + `\nURL: ${location.href}\nUA: ${navigator.userAgent}`;
-function diagFail(title) {
-  diagShow(title);
-  $('view').insertAdjacentHTML('beforeend', `<div class="panel"><button class="full" onclick="boot()">🔄 Повторить проверку</button>
-    <button class="full ghost" style="margin-top:8px" onclick="navigator.clipboard?.writeText(diagReport()).then(()=>note('Скопировано'),()=>note('Не удалось скопировать'))">📋 Скопировать отчёт</button>
-    <pre style="white-space:pre-wrap;font-size:11px;text-align:left;margin-top:10px;opacity:.7">${esc(diagReport())}</pre></div>`);
-}
-/** fetch с таймаутом; возвращает {ok, status, ms, json, text} или {err}. */
+/* ---------- 3. Запуск ---------- */
+/** Простой запрос с таймаутом для проверок (не бросает исключений). */
 async function probe(path, headers = {}, timeout = 8000) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout), t = Date.now();
   try {
@@ -149,187 +98,111 @@ async function probe(path, headers = {}, timeout = 8000) {
   finally { clearTimeout(timer); }
 }
 
+/** Старт: «будим» сервер (/health), проверяем БД, получаем профиль. Каждый шаг пишется в диагностику. */
 async function boot() {
-  DIAG.length = 0;
   const t0 = Date.now();
+  if (!tg?.initData) { dbg('init', '4. Данные профиля', 'fail', 'нет данных Telegram — открой приложение кнопкой «Открыть» у бота'); return; }
 
-  // 1. JS
-  diagStep('Скрипт приложения (app.js)')('ok', `версия v${VER} запущена`);
-
-  // 2. Telegram
-  const stTg = diagStep('Telegram WebApp');
-  await waitTg();
-  if (!tg) { stTg('fail', 'объект Telegram.WebApp не найден: страница открыта не из Telegram или telegram-web-app.js не загрузился за 8 с (telegram.org недоступен или заблокирован в вашей сети)'); return diagFail('Не удалось запустить'); }
-  if (!tg.initData) { stTg('fail', `Telegram есть (платформа: ${tg.platform}), но initData пустой — открой Mini App кнопкой «Открыть» у бота, а не по ссылке в браузере`); return diagFail('Не удалось запустить'); }
-  stTg('ok', `платформа ${tg.platform}, версия ${tg.version}, initData ${tg.initData.length} символов`);
-
-  // 3. Адрес API
-  const stUrl = diagStep('Адрес сервера');
-  const target = API_BASE || location.origin;
-  stUrl('ok', `API: ${target}` + (API_BASE && API_BASE !== location.origin ? ` (страница открыта с ${location.origin} — это ДРУГОЙ адрес, нужен CORS)` : ' (тот же сервер, что отдал страницу)'));
-
-  // 4. /health — «будим» сервер до ~75 секунд
-  const stHealth = diagStep('Сервер отвечает (/health)');
+  const N1 = '4. Сервер (/health)';
+  dbg('health', N1, 'wait', 'Подключаемся к серверу…');
   let h = null;
   for (let i = 0; i < 25; i++) {
     h = await probe('/health');
-    if (h.ok) break;
-    if (h.status) break;                                     // сервер ответил ошибкой — ждать нет смысла
-    stHealth('wait', `нет ответа: ${h.err}. Попытка ${i + 1}/25, прошло ${Math.round((Date.now() - t0) / 1000)} с (Render просыпается до минуты)`);
+    if (h.ok || h.status) break;
+    dbg('health', N1, 'wait', `Сервер просыпается… ${Math.round((Date.now() - t0) / 1000)} с (до минуты)`);
     await sleep(2000);
   }
   if (!h.ok) {
     let hint = h.status ? `сервер ответил HTTP ${h.status}: ${h.text}` : `нет связи: ${h.err}`;
-    if (!h.status && API_BASE) {                             // отличаем «адрес мёртв» от «заблокирован CORS»
-      try { await fetch(API_BASE + '/health', {mode: 'no-cors', cache: 'no-store'}); hint += ' → сервер достижим, но браузер блокирует ответ: проверь CORS / WEBAPP_URL на Render'; }
-      catch (_) { hint += ' → адрес недоступен вообще: проверь, что api-base в index.html совпадает с адресом сервиса на Render'; }
+    if (!h.status && API_BASE) {
+      try { await fetch(API_BASE + '/health', {mode: 'no-cors', cache: 'no-store'}); hint += ' → адрес достижим, но ответ блокируется (CORS) либо сервер вернул ошибку 502 — проверь Logs на Render'; }
+      catch (_) { hint += ' → адрес недоступен: проверь api-base в index.html и что сервис на Render запущен'; }
     }
-    stHealth('fail', hint);
-    return diagFail('Сервер недоступен');
+    dbg('health', N1, 'fail', hint); return;
   }
-  stHealth('ok', `ответил за ${h.ms} мс · бот: @${h.json?.bot ?? 'ещё запускается'} · polling: ${h.json?.polling ? 'да' : 'нет'}`);
+  dbg('health', N1, 'ok', `ответил за ${h.ms} мс · ${h.json?.version ?? ''}`);
 
-  // 5. База данных
-  const stDb = diagStep('База данных (/health/db)');
+  dbg('db', '5. База данных', 'wait', 'Проверяем базу…');
   const d = await probe('/health/db', {}, 10000);
-  if (!d.ok) stDb('fail', d.status ? `HTTP ${d.status}: ${d.text}` : `нет ответа: ${d.err}`);
-  else stDb(d.json?.tables_ready ? 'ok' : 'warn', d.json?.tables_ready ? `подключена, таблицы на месте (${d.ms} мс)` : `подключена, но таблицы не готовы: ${d.text}`);
+  if (!d.ok) { dbg('db', '5. База данных', 'fail', d.status ? `HTTP ${d.status}: ${d.text}` : `нет ответа: ${d.err}`); return; }
+  dbg('db', '5. База данных', d.json?.tables_ready ? 'ok' : 'warn', d.json?.tables_ready ? 'готова' : 'подключена, но таблицы не готовы: ' + d.text);
 
-  // 6. Авторизация и данные игрока
-  const stState = diagStep('Данные игрока (/api/bh/state)');
+  dbg('state', '6. Профиль игрока', 'wait', 'Загружаем профиль…');
   const s = await probe('/api/bh/state', {'X-Telegram-Init-Data': tg.initData}, 20000);
   if (!s.ok) {
     const detail = s.json?.detail || s.text || s.err;
-    stState('fail', `${s.status ? 'HTTP ' + s.status : 'нет ответа'}: ${detail}` +
-      (s.status === 401 ? ' → BOT_TOKEN на сервере не от этого бота или initData устарел' : s.status === 503 ? ' → BOT_TOKEN не задан на Render' : ''));
-    return diagFail('Не удалось получить данные игрока');
+    dbg('state', '6. Профиль игрока', 'fail', `${s.status ? 'HTTP ' + s.status : 'нет ответа'}: ${detail}` +
+      (s.status === 401 ? ' → BOT_TOKEN на сервере не принадлежит этому боту (или данные устарели)' : s.status === 503 ? ' → BOT_TOKEN не задан на Render' : ''));
+    return;
   }
-  stState('ok', `получено за ${s.ms} мс, баланс: ${s.json?.player?.coins ?? '?'}`);
-
-  // Всё хорошо — показываем игру
-  try { setS(s.json); paint(); window.__appReady = true; }
-  catch (e) { DIAG.push({name: 'Отрисовка экрана', s: 'fail', msg: `${e.name}: ${e.message}`}); diagFail('Ошибка отрисовки'); }
+  dbg('state', '6. Профиль игрока', 'ok', `получен за ${s.ms} мс`);
+  try { setS(s.json); paint(); window.__appReady = true; window.__hideBoot && window.__hideBoot(); }
+  catch (e) { dbg('paint', 'Отрисовка экрана', 'fail', `${e.name}: ${e.message}`); }
 }
 
-/** Любая необработанная ошибка JS — на экран, а не в тишину. */
-window.addEventListener('error', e => { if (!S) { DIAG.push({name: 'Ошибка JavaScript', s: 'fail', msg: `${e.message} (${(e.filename || '').split('/').pop()}:${e.lineno})`}); diagFail('Ошибка в приложении'); } });
-window.addEventListener('unhandledrejection', e => { if (!S) { DIAG.push({name: 'Необработанная ошибка', s: 'fail', msg: String(e.reason?.message || e.reason)}); diagFail('Ошибка в приложении'); } });
-
-/** Когда пользователь возвращается в приложение после долгого отсутствия — обновляем данные. */
+/** Вернулись в приложение после долгого отсутствия — обновляем данные. */
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S && Date.now() - lastSync > 30000 && !['admin'].includes(tab)) {
+  if (document.visibilityState === 'visible' && S && Date.now() - lastSync > 30000 && tab !== 'admin') {
     run(async () => { setS(await api('/api/bh/state')); paint(); });
   }
 });
 
-/* ---------- 4. Дом: SVG по уровню (5 архитектурных эпох) ---------- */
-function houseSvg(lv) {
-  const era = Math.ceil(lv / 6);                                  // эпоха 1..5: меняется каждые 6 уровней
-  // палитра эпохи: [стены, крыша, окна]
-  const P = [['#c9a26b', '#8a3b2a', '#ffe9a8'], ['#e6dccb', '#9b3a3a', '#ffe27a'], ['#8fa9c9', '#2d3e5c', '#e8f4ff'],
-             ['#7e8aa0', '#171c2b', '#59d0ff'], ['#b48cff', '#2a1560', '#7ff0ff']][era - 1];
-  const floors = Math.min(1 + Math.ceil(lv / 3), 11);             // этажей: растёт с уровнем, максимум 11
-  const fh = floors > 7 ? 20 : 26;                                // высота этажа
-  const w = 96 + Math.min(lv, 14) * 6, x = 150 - w / 2;           // ширина здания и левая граница (по центру)
-  const roofY = 262 - floors * fh;                                // Y верхней точки стен
-  const cols = 2 + Math.min(3, Math.floor(lv / 6));               // окон в ряду
-  let o = `<defs><linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${era > 3 ? '#0b0630' : '#2a1d6e'}"/><stop offset="1" stop-color="#ff7ad9"/></linearGradient></defs>`
-        + `<rect width="300" height="290" rx="22" fill="url(#sk)"/>`;                                   // небо
-  for (let i = 0; i < 18; i++) o += `<circle cx="${(i * 97) % 290 + 5}" cy="${(i * 53) % 120 + 8}" r="${i % 3 ? 1 : 1.8}" fill="#fff" opacity=".8"/>`; // звёзды
-  o += `<circle cx="245" cy="48" r="20" fill="${era > 3 ? '#7ff0ff' : '#fff3b0'}" opacity=".9"/>`;      // луна / солнце
-  if (era === 5) o += `<ellipse cx="150" cy="${roofY - 10}" rx="${w / 2 + 40}" ry="16" fill="none" stroke="#7ff0ff" stroke-width="2" opacity=".7"/>`; // орбитальное кольцо
-  for (let f = 0; f < floors; f++) {                              // этажи снизу вверх
-    const y = 262 - (f + 1) * fh;
-    o += `<rect x="${x}" y="${y}" width="${w}" height="${fh}" fill="${P[0]}" stroke="#0004"/>`;
-    for (let c = 0; c < cols; c++)                                // окна (часть «не горит» для живости)
-      o += `<rect x="${x + 10 + c * (w - 20) / cols + 3}" y="${y + 5}" width="${(w - 20) / cols - 10}" height="${fh - 10}" rx="${era > 2 ? 1 : 3}" fill="${P[2]}" opacity="${(f * 7 + c * 3) % 5 ? 1 : .35}"/>`;
-  }
-  if (era < 3) {                                                  // эпохи 1–2: двускатная крыша (во 2-й ещё и труба)
-    o += `<polygon points="${x - 10},${roofY} 150,${roofY - 34 - lv * 2} ${x + w + 10},${roofY}" fill="${P[1]}"/>`;
-    if (era === 2) o += `<rect x="${x + w - 28}" y="${roofY - 40}" width="12" height="30" fill="#6b4a3a"/>`;
-  } else if (era === 3) o += `<rect x="${x - 6}" y="${roofY - 8}" width="${w + 12}" height="10" fill="${P[1]}"/><rect x="${x + 14}" y="${roofY - 22}" width="${w - 28}" height="14" fill="${P[0]}" stroke="#0004"/>`; // плоская крыша с надстройкой
-  else if (era === 4) o += `<rect x="146" y="${roofY - 46}" width="8" height="46" fill="#aab"/><circle cx="150" cy="${roofY - 48}" r="5" fill="#ff4d4d"/><rect x="${x}" y="${roofY - 6}" width="${w}" height="8" fill="${P[1]}"/>`;  // антенна
-  else o += `<path d="M${x},${roofY} Q150,${roofY - 70} ${x + w},${roofY}Z" fill="${P[1]}" opacity=".95"/><circle cx="150" cy="${roofY - 44}" r="7" fill="#ffd400"/>`;                                          // купол
-  o += `<rect x="136" y="238" width="28" height="24" rx="3" fill="#1d0f3f"/>`                                // дверь
-     + `<rect x="0" y="262" width="300" height="28" fill="#1b9d62"/><rect x="0" y="262" width="300" height="5" fill="#48ff9b"/>`; // земля
-  return `<svg viewBox="0 0 300 290">${o}</svg>`;
-}
+/* ---------- 4. Экраны ---------- */
+const NAV = [['fish', '🎣', 'Рыбалка'], ['gear', '🪝', 'Снасти'], ['bag', '🎒', 'Рюкзак'], ['settings', '⚙️', 'Настройки']];
 
-/* ---------- 5. Экраны ---------- */
-const NAV = [['home', '🏠', 'Дом'], ['profile', '👤', 'Я']];
-
-/** Перерисовывает шапку с балансом, нижнее меню и текущий экран. */
+/** Перерисовывает верхнюю панель, нижнее меню и текущий экран. */
 function paint() {
   if (!S) return;
   document.body.classList.toggle('adm', tab === 'admin');
-  $('coins').textContent = inf(S.player.coins);
-  $('gems').textContent = inf(S.gems);
+  const p = S.player;
+  $('topbar').innerHTML = `<div class="pro"><div class="ava">${esc(avatarOf(S.avatar))}<em>${S.house.level}</em></div>
+      <div class="who"><b>${esc(p.nickname)}</b><small>Уровень ${S.house.level}</small></div></div>
+    <div class="wallet"><i>₽</i>${inf(p.coins)}</div>`;
   const items = S.is_admin ? [...NAV, ['admin', '🛡️', 'Админ']] : NAV;
   $('nav').innerHTML = items.map(([k, i, t]) => `<button class="${k === tab ? 'on' : ''}" onclick="go('${k}')"><b>${i}</b>${t}</button>`).join('');
-  const views = {home: homeV, profile: profileV, admin: () => window.Admin ? Admin.view() : '<div class="panel splash"><div class="spin"></div>Загрузка панели…</div>'};
+  const views = {
+    fish: () => maintV('Рыбалка', 'Скоро здесь можно будет забросить удочку и поймать первую рыбу.'),
+    gear: () => maintV('Снасти', 'Удочки, наживка и поплавки появятся здесь.'),
+    bag: () => maintV('Рюкзак', 'Улов и найденные вещи будут храниться здесь.'),
+    settings: settingsV,
+    admin: () => window.Admin ? Admin.view() : '<div class="panel splash"><div class="spin"></div>Загрузка панели…</div>'};
   $('view').innerHTML = views[tab]();
 }
 
-/** Главная: дом, доход, прокачка, быстрые кнопки. */
-function homeV() {
-  const h = S.house;
-  const upgrade = h.next_cost
-    ? `<p class="m">Уровень ${h.level + 1}: доход $${fmt(h.next_income)}/час</p>
-       <div class="row"><button class="ghost" style="flex:1;padding:15px" onclick="upgrade()" ${S.player.coins < h.next_cost ? 'disabled' : ''}>За $${fmt(h.next_cost)}</button></div>`
-    : '<p>👑 Максимальный уровень!</p>';
-  return `<div class="panel house">${houseSvg(h.level)}
-      <h2 style="margin:10px 0 4px">${esc(h.name)} · уровень ${h.level} / ${h.max}</h2>
-      <div class="prog"><i style="width:${h.level / h.max * 100}%"></i></div>
-      <p class="m">Доход: <b>$${fmt(h.income)}</b>/час${S.car ? ` (🚗 +$${fmt(S.car.bonus)})` : ''} · копится до ${h.cap_hours} ч</p></div>
-    <div class="panel"><h2>💵 Доход (в реальном времени)</h2><div class="income">$<span id="pend">${fmt(h.pending)}</span></div>
-      <button id="claim" class="full" onclick="claim()">Забрать</button></div>
-    <div class="panel"><h2>⬆️ Прокачка</h2>${upgrade}</div>
-    <div class="cards">
-      <div class="card" onclick="daily()"><i>🎁</i>Бонус<small>${S.daily_ready ? `$${100 * h.level} + ⭐1` : 'завтра'}</small></div></div>`;
+/** Заглушка «Технические работы» с картинкой. */
+function maintV(title, text) {
+  return `<div class="panel maint">
+    <svg viewBox="0 0 300 170" aria-hidden="true">
+      <defs><clipPath id="mc"><rect x="0" y="95" width="300" height="75" rx="14"/></clipPath></defs>
+      <g clip-path="url(#mc)"><rect x="0" y="95" width="300" height="75" fill="#0c4a66"/>
+      <path class="wv1" d="M-100 112q30-12 60 0t60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0V170H-100z" fill="#1fa3c4" opacity=".5"/></g>
+      <path d="M70 92h150l-18 22H88z" fill="#8a5a2b"/><path d="M150 92V28l52 52z" fill="#f4f4f4"/><path d="M150 28v64" stroke="#8a5a2b" stroke-width="4"/>
+      <circle cx="250" cy="34" r="16" fill="#ffb347" opacity=".9"/>
+      <g transform="translate(34 40)"><path d="M0 40l26-26" stroke="#ffb347" stroke-width="9" stroke-linecap="round"/><circle cx="32" cy="8" r="13" fill="none" stroke="#ffb347" stroke-width="7"/></g>
+    </svg>
+    <h2>🛠 Технические работы</h2>
+    <p class="m">${esc(text)}</p><span class="tag">Раздел «${esc(title)}» скоро откроется</span></div>`;
 }
 
-function profileV() {
-  const p = S.player;
-  return `<div class="panel" style="text-align:center"><div style="font-size:60px">${esc(S.avatar)}</div><h2>${esc(p.nickname)}</h2><p class="m">ID: ${p.telegram_id}</p></div>
-    <div class="panel"><h2>📊 Статистика</h2><div class="row">${[['🏠 Дом', S.house.level + ' ур.']].map(([a, b]) => `<span class="tag">${a}: <b>${b}</b></span>`).join('')}</div></div>
-    <div class="panel"><h2>🎭 Аватар</h2><div class="row">${AVATARS.map(a => `<button class="${a === S.avatar ? '' : 'ghost'}" style="font-size:22px" onclick="post('avatar',{avatar:'${a}'})">${a}</button>`).join('')}</div></div>
-    <div class="panel"><h2>✏️ Ник</h2><div class="row"><input id="nick" maxlength="24" placeholder="Ник (пусто — имя Telegram)" value="${esc(p.custom_nickname || '')}"><button onclick="saveNick()">Сохранить</button></div></div>`;
+/** Настройки: аватар и ник. */
+function settingsV() {
+  const p = S.player, cur = avatarOf(S.avatar);
+  return `<div class="panel"><h2>🎭 Аватар</h2><div class="avs">${AVATARS.map(a => `<button class="${a === cur ? 'on' : ''}" onclick="post('avatar',{avatar:'${a}'})">${a}</button>`).join('')}</div></div>
+    <div class="panel"><h2>✏️ Ник</h2><div class="row"><input id="nick" maxlength="24" placeholder="Ник (пусто — имя Telegram)" value="${esc(p.custom_nickname || '')}"><button onclick="saveNick()">Сохранить</button></div></div>
+    <div class="panel"><h2>ℹ️ Профиль</h2><div class="row"><span class="tag">ID: <b>${p.telegram_id}</b></span><span class="tag">Уровень: <b>${S.house.level}</b></span></div></div>`;
 }
 
-/* ---------- 6. Действия (вызываются из onclick) ---------- */
-/** Переход между вкладками + подгрузка данных нужной вкладки. */
+/* ---------- 5. Действия (вызываются из onclick) ---------- */
+/** Переход между вкладками. Админ-панель подгружается только администратору. */
 async function go(t) {
-  tab = t; sub = null; drop = null; paint();
+  tab = t; sub = null; paint();
   if (t === 'admin') run(async () => {
-    if (!window.Admin) await loadScript('admin.js?v=' + VER);   // админ-код грузим только админу и только когда он нужен
+    if (!window.Admin) await loadScript('admin.js?v=' + VER);
     await Admin.load();
   });
 }
-const claim = () => post('claim').then(r => r?.got && note(`+$${fmt(r.got)}`));            // забрать доход
-const upgrade = () => post('upgrade').then(r => r && note('🎉 Дом улучшен!'));            // улучшить дом за $
-const daily = () => post('daily').then(r => r && note(`🎁 +$${fmt(r.got)} и ⭐1`));        // ежедневный бонус
-const saveNick = () => run(async () => {                                                  // сохранить ник
+const saveNick = () => run(async () => {
   setS(await api('/api/nickname', {nickname: $('nick').value})); note('✅ Ник сохранён'); paint();
 });
 
-/** Кликер: тапы применяются сразу на экране, а на сервер уходят пачкой раз в 0.4 с. */
-function tapWork() {
-  if (S.energy < 1) return;
-  tapN++; S.energy--; S.player.coins += 1 + S.house.level; paint();
-  clearTimeout(tapT);
-  tapT = setTimeout(() => {
-    const n = tapN; tapN = 0;
-    run(async () => { setS(await api('/api/bh/tap', {n})); paint(); });
-  }, 400);
-}
-
-/** Доход дома «тикает» каждую секунду: пересчитываем сумму и обновляем кнопку «Забрать». */
-setInterval(() => {
-  if (!S || tab !== 'home') return;
-  const h = S.house;
-  const p = Math.min(h.pending + h.income / 3600 * (Date.now() - S.t0) / 1000, h.income * h.cap_hours);
-  const e = $('pend'); if (e) e.textContent = fmt(Math.floor(p));
-  const b = $('claim'); if (b) { b.disabled = p < 1; b.textContent = `Забрать $${fmt(Math.floor(p))}`; }
-}, 1000);
-
-boot();   // старт приложения
+boot();

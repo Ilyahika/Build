@@ -3,55 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0a">
-<!-- Адрес сервера API (Render), БЕЗ / в конце. Если страница лежит на этом же сервере — можно оставить как есть. -->
+<meta name="theme-color" content="#06141c">
+<!-- Адрес сервера API (Render), БЕЗ / в конце. Пусто = тот же сервер, что отдал страницу. -->
 <meta name="api-base" content="https://telegram-miniapp-1-4egc.onrender.com">
-<title>BuildHouse</title>
-<!-- Заранее открываем соединение с сервером: экономит 100–300 мс на первом запросе -->
-<link rel="preconnect" href="https://telegram-miniapp-1-4egc.onrender.com">
-<link rel="stylesheet" href="./style.css?v=10">
+<title>Viva</title>
+<link rel="stylesheet" href="./style.css?v=11">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <svg viewBox="0 0 48 48"><path d="M24 4 3 22h6v22h30V22h6z" fill="#ffd400"/><path d="M24 4 3 22h42z" fill="#e10600"/><rect x="20" y="28" width="9" height="16" fill="#0a0a0a"/><rect x="11" y="26" width="6" height="6" fill="#0a0a0a"/><rect x="32" y="26" width="6" height="6" fill="#0a0a0a"/></svg>
-    <div><h1>Build<span>House</span></h1><small>строй · качай · богатей</small></div>
-  </header>
-  <div class="hz"></div>
-  <div class="bar">
-    <div class="cur"><i>$</i><span id="coins">—</span><small>ДОЛЛАРЫ</small></div>
-    <div class="cur"><i>★</i><span id="gems">—</span><small>ЗВЁЗДЫ</small></div>
-  </div>
-  <!-- Сюда app.js выводит текущий экран. Пока грузится — показываем заставку со счётчиком -->
-  <div id="view"><div class="panel splash"><div class="spin"></div><div id="splash-msg">Загрузка…</div></div></div>
+<!-- Заставка Viva: показывается, пока приложение грузится; при ошибке здесь же выводится диагностика -->
+<div id="boot">
+  <svg class="logo" viewBox="0 0 300 190" aria-hidden="true">
+    <defs><linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1fa3c4"/><stop offset="1" stop-color="#0a3d55"/></linearGradient>
+      <clipPath id="cp"><ellipse cx="150" cy="128" rx="125" ry="26"/></clipPath></defs>
+    <path d="M150 6 V92" stroke="#cfe9f3" stroke-width="2" fill="none"/>
+    <g transform="translate(0 -16)"><g class="float"><ellipse cx="150" cy="98" rx="11" ry="13" fill="#fff"/><path d="M139 98a11 13 0 0 1 22 0z" fill="#e5484d"/><circle cx="150" cy="86" r="3" fill="#ffb347"/></g></g>
+    <g clip-path="url(#cp)"><rect x="20" y="100" width="260" height="70" fill="url(#sea)"/>
+      <path class="wv1" d="M-100 122q30-14 60 0t60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0V190H-100z" fill="#2cc0e0" opacity=".55"/>
+      <path class="wv2" d="M-100 136q30-14 60 0t60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0V190H-100z" fill="#0c5b7c" opacity=".8"/></g>
+  </svg>
+  <h1>Vi<span>va</span></h1>
+  <div class="sub2">рыбацкий клуб</div>
+  <div id="boot-msg">Загрузка…</div>
+  <div id="dbg" class="panel" style="display:none;text-align:left"></div>
 </div>
-<div id="dbg" class="panel" style="display:none;margin:12px;text-align:left"></div>
+
+<div class="wrap">
+  <div id="topbar" class="topbar"></div>
+  <div id="view"></div>
+</div>
 <div id="status" role="status"></div>
 <nav id="nav"></nav>
+
 <script>
 /* ============ Загрузчик с диагностикой. Не зависит от внешних файлов: работает, даже если app.js или telegram.org недоступны ============ */
 (function () {
-  var VER = '10', T0 = Date.now(), LOG = [];
+  var VER = '11', T0 = Date.now(), LOG = [];
   var ICON = {ok: '✅', wait: '⏳', fail: '❌', warn: '⚠️'};
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
   function short(u) { return String(u || '').split('/').pop().split('?')[0]; }
   function report() {
     var t = LOG.map(function (l) { return l.l.toUpperCase() + ' [' + l.t + 'с] ' + l.n + ': ' + l.m; }).join('\n');
-    if (window.diagReport) { try { t += '\n--- приложение ---\n' + window.diagReport(); } catch (e) {} }
-    return t + '\nURL: ' + location.href.split('#')[0] + '\nUA: ' + navigator.userAgent;
+    return t + '\nUA: ' + navigator.userAgent;
   }
   window.__report = report;
-  function draw(force) {
-    var box = $('dbg'); if (!box) return;
-    if (window.__appStarted && !force) { box.style.display = 'none'; return; }   // приложение запустилось и показывает свою диагностику
+  function draw() {
+    var box = $('dbg'), msg = $('boot-msg'); if (!box) return;
+    if (window.__appReady) return;
     var bad = LOG.some(function (l) { return l.l === 'fail'; });
+    var slow = Date.now() - T0 > 20000;
+    if (!bad && !slow) {                       // обычная загрузка: одна спокойная строка вместо технического списка
+      var w = LOG.filter(function (l) { return l.l === 'wait'; }).pop();
+      if (msg) msg.textContent = w ? w.m : 'Загрузка…';
+      box.style.display = 'none'; return;
+    }
+    if (msg) msg.textContent = bad ? 'Не удалось запустить' : 'Загрузка идёт дольше обычного…';
     box.style.display = 'block';
-    box.innerHTML = '<h2>' + (bad ? 'Не удалось запустить' : 'Запуск…') + ' <small style="opacity:.6">v' + VER + '</small></h2>' +
-      LOG.map(function (l) { return '<p style="margin:6px 0">' + ICON[l.l] + ' <b>' + esc(l.n) + '</b><br><small style="opacity:.85;word-break:break-word">' + esc(l.m) + '</small></p>'; }).join('') +
-      (bad ? '<button class="full" onclick="location.reload()">🔄 Повторить</button>' +
-        '<button class="full ghost" style="margin-top:8px" onclick="try{navigator.clipboard.writeText(window.__report())}catch(e){}">📋 Скопировать отчёт</button>' +
-        '<pre style="white-space:pre-wrap;font-size:11px;margin-top:10px;opacity:.7">' + esc(report()) + '</pre>' : '');
+    box.innerHTML = LOG.map(function (l) { return '<p style="margin:6px 0">' + ICON[l.l] + ' <b>' + esc(l.n) + '</b><br><small style="opacity:.85;word-break:break-word">' + esc(l.m) + '</small></p>'; }).join('') +
+      '<button class="full" onclick="location.reload()">🔄 Повторить</button>' +
+      '<button class="full ghost" style="margin-top:8px" onclick="try{navigator.clipboard.writeText(window.__report())}catch(e){}">📋 Скопировать отчёт</button>';
   }
   /** Запись в журнал; запись с тем же ключом обновляется (⏳ -> ✅/❌). */
   function dbg(key, name, level, msg) {
@@ -61,29 +71,35 @@
     draw();
   }
   window.__dbg = dbg;
+  /** Плавно убирает заставку (не раньше, чем через 1.6 с — чтобы успела проиграть анимация). */
+  window.__hideBoot = function () {
+    setTimeout(function () { var b = $('boot'); if (b) { b.className = 'off'; setTimeout(function () { b.style.display = 'none'; }, 600); } },
+      Math.max(0, 1600 - (Date.now() - T0)));
+  };
+  setInterval(draw, 2000);
 
   // любые ошибки JS — на экран
   window.addEventListener('error', function (e) { dbg('js' + LOG.length, 'Ошибка JavaScript', 'fail', e.message + ' (' + short(e.filename) + ':' + e.lineno + ')'); });
   window.addEventListener('unhandledrejection', function (e) { dbg('pr' + LOG.length, 'Необработанная ошибка', 'fail', String(e.reason && e.reason.message || e.reason)); });
 
-  dbg('page', '1. Страница', 'ok', 'index.html v' + VER + ' загружен · ' + location.origin);
+  dbg('page', '1. Страница', 'ok', 'Viva v' + VER + ' · ' + location.origin);
 
-  /* ---- 2. Telegram: пробуем официальный скрипт, при неудаче берём данные профиля из адреса страницы ---- */
+  /* ---- 2. Telegram: официальный скрипт; если telegram.org недоступен — данные профиля берём из адреса страницы ---- */
   function hashParams() { try { return new URLSearchParams(location.hash.replace(/^#/, '')); } catch (e) { return null; } }
   function finishTelegram() {
     var W = window.Telegram && window.Telegram.WebApp, p = hashParams(), data = p && p.get('tgWebAppData') || '';
-    if (W && W.initData) { window.__tg = W; dbg('tg', '2. Telegram', 'ok', 'WebApp ' + W.version + ', платформа ' + W.platform + ', initData ' + W.initData.length + ' симв.'); }
-    else if (data) {                                  // telegram.org недоступен — Telegram всё равно передаёт данные в адресе
+    if (W && W.initData) { window.__tg = W; dbg('tg', '2. Telegram', 'ok', 'WebApp ' + W.version + ', ' + W.platform); }
+    else if (data) {
       window.__tg = {initData: data, platform: (p.get('tgWebAppPlatform') || 'hash'), version: (p.get('tgWebAppVersion') || '?'),
         ready: function () {}, expand: function () {}, disableVerticalSwipes: function () {}, isVersionAtLeast: function () { return false; }};
-      dbg('tg', '2. Telegram', 'warn', 'telegram-web-app.js не загрузился (telegram.org недоступен?), но профиль получен из адреса страницы — продолжаем');
+      dbg('tg', '2. Telegram', 'ok', 'профиль получен из адреса страницы');
     } else {
       window.__tg = W || null;
-      dbg('tg', '2. Telegram', 'fail', (W ? 'WebApp есть, но initData пустой' : 'telegram-web-app.js не загрузился и данных в адресе нет') + ' — открой Mini App кнопкой «Открыть» у бота внутри Telegram, а не ссылкой в браузере');
+      dbg('tg', '2. Telegram', 'fail', (W ? 'WebApp есть, но данных профиля нет' : 'telegram-web-app.js не загрузился и данных в адресе нет') + ' — открой Mini App кнопкой «Открыть» у бота внутри Telegram, а не ссылкой в браузере');
     }
     loadApp();
   }
-  dbg('tg', '2. Telegram', 'wait', 'загружаем telegram-web-app.js (до 6 с)…');
+  dbg('tg', '2. Telegram', 'wait', 'Подключаемся к Telegram…');
   var tgDone = false;
   function tgOnce() { if (tgDone) return; tgDone = true; finishTelegram(); }
   var ts = document.createElement('script');
@@ -92,27 +108,26 @@
   document.head.appendChild(ts);
   setTimeout(tgOnce, 6000);
 
-  /* ---- 3. Основной скрипт игры ---- */
+  /* ---- 3. Основной скрипт ---- */
   function loadApp() {
-    dbg('app', '3. Скрипт игры (app.js)', 'wait', 'скачиваем (до 15 с)…');
+    dbg('app', '3. Скрипт приложения (app.js)', 'wait', 'Загружаем приложение…');
     var done = false, s = document.createElement('script');
     s.src = './app.js?v=' + VER;
-    s.onload = function () { done = true; dbg('app', '3. Скрипт игры (app.js)', window.__appStarted ? 'ok' : 'fail', window.__appStarted ? 'скачан и запущен' : 'скачан, но не выполнился до конца — смотри ошибку JavaScript ниже'); };
+    s.onload = function () { done = true; dbg('app', '3. Скрипт приложения (app.js)', window.__appStarted ? 'ok' : 'fail', window.__appStarted ? 'запущен' : 'скачан, но не выполнился до конца — смотри ошибку JavaScript'); };
     s.onerror = function () {
       done = true;
-      fetch('./app.js?v=' + VER, {cache: 'no-store'}).then(function (r) { dbg('app', '3. Скрипт игры (app.js)', 'fail', 'не загрузился, сервер ответил HTTP ' + r.status); })
-        .catch(function (e) { dbg('app', '3. Скрипт игры (app.js)', 'fail', 'нет связи с сервером: ' + e.message); });
+      fetch('./app.js?v=' + VER, {cache: 'no-store'}).then(function (r) { dbg('app', '3. Скрипт приложения (app.js)', 'fail', 'не загрузился, сервер ответил HTTP ' + r.status); })
+        .catch(function (e) { dbg('app', '3. Скрипт приложения (app.js)', 'fail', 'нет связи: ' + e.message); });
     };
     document.head.appendChild(s);
-    setTimeout(function () { if (!done) dbg('app', '3. Скрипт игры (app.js)', 'fail', 'не скачался за 15 с — сервер спит или нет сети'); }, 15000);
+    setTimeout(function () { if (!done) dbg('app', '3. Скрипт приложения (app.js)', 'fail', 'не скачался за 15 с — сервер спит или нет сети'); }, 15000);
   }
 
-  /* ---- Сторож: приложение должно показать игру за 40 с ---- */
+  /* ---- Сторож: приложение должно открыться за 60 с ---- */
   setTimeout(function () {
     if (window.__appReady) return;
-    dbg('wd', 'Сторож', 'fail', 'за 40 с игра так и не загрузилась. Последний шаг смотри выше / в отчёте.');
-    draw(true);
-  }, 40000);
+    dbg('wd', 'Сторож', 'fail', 'за 60 с приложение так и не открылось. Последний шаг смотри выше.');
+  }, 60000);
 })();
 </script>
 </body>

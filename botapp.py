@@ -44,7 +44,7 @@ async def cmd_start(message: Message):
         return
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text='🚀 Открыть', web_app=WebAppInfo(url=WEBAPP_URL))]])
-    await message.answer('🏠 BuildHouse: строй дом, играй в «Мины», открывай кейсы!', reply_markup=keyboard)
+    await message.answer('🎣 Viva — рыбацкий клуб. Нажми кнопку, чтобы открыть приложение!', reply_markup=keyboard)
 
 
 async def run_bot(bot: Bot) -> None:
