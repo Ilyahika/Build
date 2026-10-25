@@ -77,7 +77,7 @@ def health_db():
     try:
         with session() as db:
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        return {'database': 'connected', 'tables_ready': {'players', 'bh', 'cars', 'mines2', 'fishing_progress', 'fishing_fish', 'fishing_finds', 'fishing_gear', 'fishing_cases', 'fishing_discovered'} <= tables}
+        return {'database': 'connected', 'tables_ready': {'players', 'bh', 'cars', 'mines2', 'fishing_progress', 'fishing_fish', 'fishing_finds', 'fishing_gear', 'fishing_cases', 'fishing_discovered', 'fishing_cast_log'} <= tables}
     except Exception:
         log.exception('Проверка БД не прошла')
         raise HTTPException(503, 'SQLite недоступна; смотри Logs в Render')

@@ -9,6 +9,45 @@
   let loading = false;
   let fetching = null;
   let error = '';
+  let serverClockOffsetMs = 0;
+  let quotaRetryAfter = 0;
+  let quotaUpdating = false;
+  const secsText = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,'0')}`;
+  const quotaRemaining = () => {
+    const q = state?.quota;
+    if (!q) return 10;
+    if (q.unlimited) return Infinity;
+    return q.remaining;
+  };
+  const quotaWaitSeconds = () => {
+    const q = state?.quota;
+    if (!q || q.unlimited || !q.reset_at) return 0;
+    return Math.max(0, Math.ceil((q.reset_at * 1000 - (Date.now() + serverClockOffsetMs))/1000));
+  };
+  const cooldownSeconds = () => {
+    if (!state?.progress || state?.quota?.unlimited) return 0;
+    return Math.max(0, Math.ceil(state.progress.cooldown_seconds -
+      ((Date.now() + serverClockOffsetMs) / 1000 - state.progress.last_cast)));
+  };
+  function levelPanel(prog){
+    const done = Math.max(0, Math.min(100, prog.xp_percent || 0));
+    return `<section class="panel f-level-panel">
+      <div class="f-level-line"><div><div class="f-overline">ПРОГРЕСС РЫБАКА</div><h2>Уровень <span>${prog.level}</span></h2></div>
+        <strong>${money(prog.xp_current)} / ${money(prog.xp_required)} EXP</strong></div>
+      <div class="f-level-track" role="progressbar" aria-valuenow="${prog.xp_current}" aria-valuemin="0" aria-valuemax="${prog.xp_required}"><div style="width:${done}%"></div></div>
+      <div class="f-level-foot"><span>Всего опыта: ${money(prog.xp_total)} EXP</span><span>До следующего уровня: ${money(prog.xp_remaining)} EXP</span></div>
+    </section>`;
+  }
+  function quotaPanel(){
+    const q=state.quota;
+    const left=quotaRemaining();
+    const wait=quotaWaitSeconds();
+    return `<div class="f-quota-panel"><div class="f-quota-top"><b>Лимит забросов</b>
+      <strong id="fishQuotaText">${q.unlimited?'∞':`${left} / ${q.limit}`}</strong></div>
+      <div class="f-quota-track"><div id="fishQuotaBar" style="width:${q.unlimited?100:100*left/q.limit}%"></div></div>
+      <p class="m" id="fishQuotaWait">${q.unlimited?'У администратора нет ограничения':
+      wait ? `Следующая попытка освободится через ${secsText(wait)}`:'Не более 10 забросов за 10 минут'}</p></div>`;
+  }
 
   const h = x => esc(x);
   const money = x => fmt(x);
@@ -23,7 +62,13 @@
       ${error ? `<p class="m">${h(error)}</p>` : '<p class="m">Проверяем снасти и рюкзак.</p>'}
       <button class="full" onclick="Fishing.refresh(true)">↻ Повторить</button></div>`;
 
-  function setState(next){state=next;error='';}
+  function setState(next){
+    state=next;error='';
+    if (next.quota?.server_time) serverClockOffsetMs=next.quota.server_time * 1000 - Date.now();
+    if(next.locations?.some(loc=>loc.key===selected && loc.level_required > next.progress.level)){
+      selected=next.locations.find(loc=>loc.level_required <= next.progress.level)?.key || 'pond';
+    }
+  }
   async function refresh(force=false){
     if (fetching) return fetching;
     if (state && !force) return state;
@@ -71,21 +116,29 @@
         <div class="f-catch-art">${h(latest.fish.icon)}</div>
         <div><div class="f-overline">ПОСЛЕДНИЙ УЛОВ</div><h3>${h(latest.fish.name)}</h3>
           ${rarityTag(latest.fish.rarity)}<p class="m">${h(latest.location)} · стоимость ₽ ${money(latest.fish.value)}</p>
+          <div class="f-exp-reward">+${money(latest.xp_gained)} EXP ${latest.level_after>latest.level_before?'· 🎉 Новый уровень '+latest.level_after:''}</div>
           ${latest.find ? `<div class="f-extra">🎁 Находка: ${h(latest.find.icon)} ${h(latest.find.name)} ${rarityTag(latest.find.rarity)}</div>`:''}
         </div></div>` : '';
     const rod=gearByKey(prog.rod),tackle=gearByKey(prog.tackle);
+    const accessible=loc.level_required <= prog.level;
     return `<div class="f-heading"><div><div class="f-overline">VIVA · FISHING CLUB</div><h1>Рыбалка <span>открыта</span></h1><p>Исследуй 5 водоёмов и собери коллекцию из 20 рыб.</p></div><span class="f-live-pill">● ONLINE</span></div>
+      ${levelPanel(prog)}
       <div class="f-quickstats"><div><small>Всего уловов</small><b>${money(prog.catches)}</b></div>
       <div><small>Найдено вещей</small><b>${money(count(state.finds))}</b></div>
       <div><small>Удочка</small><b>${h(rod?.name||'—')}</b></div></div>
-      <div class="f-section-title"><h2>Выбери локацию</h2><span>5 доступных локаций</span></div>
-      <div class="f-locations">${state.locations.map(l=>`<button class="f-location ${l.key===loc.key?'active':''} ${locationClass(l.key)}" onclick="Fishing.select('${h(l.key)}')">
-        <span class="f-location-icon">${h(l.icon)}</span><span><b>${h(l.name)}</b><small>${h(l.subtitle)}</small></span>${l.key===loc.key?'<span class="f-loc-check">✓</span>':''}</button>`).join('')}</div>
+      <div class="f-section-title"><h2>Выбери локацию</h2><span>Открываются по уровням</span></div>
+      <div class="f-locations">${state.locations.map(l=>{const locked=l.level_required>prog.level;
+        return `<button class="f-location ${l.key===loc.key?'active':''} ${locked?'f-location-locked':''} ${locationClass(l.key)}"
+        onclick="Fishing.select('${h(l.key)}')" aria-label="${h(l.name)} — ${locked?'доступ с уровня '+l.level_required:'доступно'}">
+        <span class="f-location-icon">${locked?'🔒':h(l.icon)}</span><span><b>${h(l.name)}</b>
+        <small>${locked?'Открывается на уровне '+l.level_required:h(l.subtitle)}</small></span>
+        <span class="f-loc-check">${locked?'ур. '+l.level_required:l.key===loc.key?'✓':''}</span></button>`;}).join('')}</div>
       ${scene(loc)}
       <div class="panel f-cast-panel"><div class="f-cast-heading"><div><div class="f-overline">ГОТОВНОСТЬ СНАСТЕЙ</div><h2>${h(loc.description)}</h2></div><span class="f-tackle-icon">🎣</span></div>
         <div class="f-equipped"><span>${h(rod?.icon||'🎣')} ${h(rod?.name||'Удочка')}</span><span>${h(tackle?.icon||'🪝')} ${h(tackle?.name||'Оснастка')}</span></div>
-        <button id="fishCastBtn" class="full f-cast-btn" onclick="Fishing.cast()" ${busy?'disabled':''}>${busy?'🎣 Ловим...':'🎣 Забросить удочку'}</button>
-        <p class="m f-cast-help">Рыба и находки сохраняются в рюкзаке. Заброс бесплатный. Перерыв между забросами — 4 секунды.</p>
+        ${quotaPanel()}
+        <button id="fishCastBtn" class="full f-cast-btn" onclick="Fishing.cast()" ${busy||!accessible||quotaRemaining()<=0?'disabled':''}>${busy?'🎣 Ловим...':quotaRemaining()<=0?'⌛ Попытки закончились':'🎣 Забросить удочку'}</button>
+        <p class="m f-cast-help">10 бесплатных забросов за последние 10 минут. EXP даётся за рыбу и кейсы. Следующая попытка появляется через 10 минут после использованной.</p>
       </div>
       ${reward}
       <div class="panel"><div class="f-section-title"><h2>Рыбы этой локации</h2><span>${localFish.length} вида</span></div>
@@ -102,7 +155,7 @@
   function caseCard(c){
     return `<div class="f-case-card case-${h(c.key)}"><div class="f-case-icon">${h(c.icon)}</div>
       <div class="f-case-info"><b>${h(c.name)}</b><p>${h(c.subtitle)}</p>
-        <small>Доступно открытий: <strong>${money(c.available)}</strong> · Открыто: ${money(c.opened)}</small>
+        <small>Доступно открытий: <strong>${money(c.available)}</strong> · Открыто: ${money(c.opened)}</small><small>🎖 +${money(c.xp_reward)} EXP за открытие</small>
       </div><button class="${c.available?'':'ghost'}" onclick="Fishing.openCase('${h(c.key)}')" ${!c.available||busy?'disabled':''}>${c.available?'Открыть':'Закрыт'}</button>
       <details><summary>Возможные награды и шансы</summary><div class="f-case-odds">${c.rewards.map(g=>`<div>${h(g.icon)} ${h(g.name)} ${rarityTag(g.rarity)} <b>${g.chance}%</b></div>`).join('')}</div></details></div>`;
   }
@@ -114,7 +167,8 @@
       <div class="panel"><small>ОСНАСТКА</small><div class="f-equipped-big">${h(tackle?.icon||'🪝')}</div><b>${h(tackle?.name||'—')}</b>${rarityTag(tackle?.rarity||'common')}</div></div>
       <div class="panel"><div class="f-section-title"><h2>Удочки</h2><span>6 видов</span></div><div class="f-gear-grid">${state.catalog.gear.filter(g=>g.type==='rod').map(gearItem).join('')}</div></div>
       <div class="panel"><div class="f-section-title"><h2>Оснастки</h2><span>6 видов</span></div><div class="f-gear-grid">${state.catalog.gear.filter(g=>g.type==='tackle').map(gearItem).join('')}</div></div>
-      <div class="f-section-title"><h2>4 бесплатных кейса</h2><span>Награды за уловы</span></div>
+      ${levelPanel(state.progress)}
+      <div class="f-section-title"><h2>4 бесплатных кейса</h2><span>Снасти + EXP</span></div>
       <p class="m">Открытия зарабатываются ловлей рыбы: их не нужно покупать. Все возможные награды и шансы указаны в кейсе.</p>
       <div class="f-case-grid">${state.cases.map(caseCard).join('')}</div>`;
   }
@@ -153,13 +207,18 @@
     } catch(e){note('⚠️ '+e.message);}
     finally{busy=false; if(S)paint();}
   }
-  function choose(key){if(!state?.locations.some(l=>l.key===key)) return; selected=key;latest=null;paint();}
+  function choose(key){
+    const loc=state?.locations.find(l=>l.key===key);
+    if(!loc)return;
+    if(loc.level_required>state.progress.level){note(`🔒 ${loc.name} доступно с ${loc.level_required} уровня рыбака`);return;}
+    selected=key;latest=null;paint();
+  }
   async function cast(){
     await action('cast',{location:selected}, async r=>{latest=r.result;
-      note('🎣 Поймано: '+r.result.fish.name+(r.result.find?' · находка: '+r.result.find.name:''));});
+      note('🎣 '+r.result.fish.name+' · +'+r.result.xp_gained+' EXP'+(r.result.level_after>r.result.level_before?' · Новый уровень!':''));});
   }
   async function equip(key){await action('equip',{gear_key:key},()=>note('✓ Снасть надета'));}
-  async function openCase(key){await action('case/open',{case_key:key},r=>note('🎁 '+r.reward.name+' · '+colors[r.reward.rarity]));}
+  async function openCase(key){await action('case/open',{case_key:key},r=>note('🎁 '+r.reward.name+' · +'+r.xp_gained+' EXP'+(r.level_after>r.level_before?' · Новый уровень!':'')));}
   async function sell(key){
     if(key==='all' && !state?.fish.length)return;
     await action('sell',{fish_key:key},async r=>{
@@ -169,12 +228,26 @@
   }
 
   setInterval(()=>{
-    if(!state || busy) return;
-    const el=document.getElementById('fishCastBtn'); if(!el)return;
-    if(S?.is_admin){el.disabled=false; el.textContent='🎣 Забросить удочку';return;}
-    const delay=Math.max(0,state.progress.cooldown_seconds-(Math.floor(Date.now()/1000)-state.progress.last_cast));
-    el.disabled=delay>0;
-    el.textContent=delay>0?`⌛ Следующий заброс через ${delay} сек.`:'🎣 Забросить удочку';
+    if (!state) return;
+    const q=state.quota;
+    const left=quotaRemaining();
+    const wait=quotaWaitSeconds();
+    const text=document.getElementById('fishQuotaText');
+    if(text)text.textContent=q.unlimited?'∞':`${left} / ${q.limit}`;
+    const foot=document.getElementById('fishQuotaWait');
+    if(foot)foot.textContent=q.unlimited?'У администратора нет ограничения':
+      wait>0?`Следующая попытка освободится через ${secsText(wait)}`:'Не более 10 забросов за 10 минут';
+    // Когда истекает первая попытка, перепроверяем остаток на сервере.
+    if(!q.unlimited && q.reset_at && wait===0 && !busy && !quotaUpdating && Date.now()>=quotaRetryAfter){
+      quotaUpdating=true;
+      refresh(true).catch(()=>{}).finally(()=>{quotaUpdating=false;quotaRetryAfter=Date.now()+5000;});
+    }
+    const el=document.getElementById('fishCastBtn');
+    if(!el)return;
+    const cooldown=cooldownSeconds();
+    el.disabled=busy || left<=0 || cooldown>0;
+    el.textContent=busy?'🎣 Ловим...':left<=0?`⌛ След. попытка через ${secsText(wait)}`:
+      cooldown>0?`⌛ Следующий заброс через ${cooldown} сек.`:'🎣 Забросить удочку';
   },500);
 
   window.Fishing={refresh,fishView,gearView,bagView,select:choose,bagTab:key=>{bagFilter=key;paint();},
