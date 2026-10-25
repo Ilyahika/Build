@@ -7,7 +7,6 @@ config.py — настройки приложения.
 import os
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent   # папка, где лежит проект
 STARTED = time.time()                    # момент запуска сервера (для аптайма в админке)
@@ -28,6 +27,7 @@ DB_PATH = Path(_env('DB_PATH') or ROOT / 'database.db')  # путь к SQLite (�
 INIT_DATA_MAX_AGE = 24 * 3600   # сколько секунд действует подпись initData от Telegram
 LAST_SEEN_EVERY = 30            # как часто (сек) обновлять «был онлайн», чтобы не писать в БД на каждый клик
 
-# CORS нужен только если страница лежит на другом домене (например, GitHub Pages)
-_p = urlsplit(WEBAPP_URL)
-CORS_ORIGINS = [f'{_p.scheme}://{_p.netloc}'] if WEBAPP_URL else []
+# CORS: авторизация идёт заголовком X-Telegram-Init-Data (подписанным токеном бота), а не cookie,
+# поэтому разрешать запросы с любого адреса безопасно. Так страница работает с GitHub Pages, Render и т.д.,
+# и не ломается из-за опечатки в WEBAPP_URL.
+CORS_ORIGINS = ['*']
