@@ -101,22 +101,32 @@ def register(user: dict) -> None:
         raise HTTPException(403, 'Аккаунт заблокирован' + (f": {row['reason']}" if row['reason'] else ''))
 
 
-def current_user(request: Request) -> dict:
-    """Зависимость FastAPI: проверяет initData из заголовка и возвращает пользователя."""
+def signed_user(request: Request) -> dict:
+    """Only Telegram HMAC authentication. Called by the maintenance status endpoint too."""
     if not BOT_TOKEN:
         raise HTTPException(503, 'BOT_TOKEN не настроен на сервере')
     init_data = request.headers.get('X-Telegram-Init-Data', '')
     try:
-        user = verify_init_data(init_data, BOT_TOKEN)
+        return verify_init_data(init_data, BOT_TOKEN)
     except AuthError as exc:
         log.warning('Авторизация Telegram не прошла: %s (длина initData=%d)', exc.code, len(init_data))
         messages = {
             'no_init_data': 'Открой Mini App кнопкой «Открыть» внутри Telegram, а не в браузере.',
             'expired': 'Данные Telegram устарели. Закрой Mini App и открой заново.',
             'bad_hash': (f'Не удалось подтвердить профиль (bad_hash). Открой Mini App из чата с ботом '
-                         f'@{botapp.state.username or "?"} и проверь, что BOT_TOKEN на сервере принадлежит ему.'),
+                         f'@{botapp.state.username or "?"} и проверь BOT_TOKEN.'),
         }
         raise HTTPException(401, messages.get(exc.code, f'Не удалось подтвердить профиль Telegram ({exc.code}).'))
+
+
+def current_user(request: Request) -> dict:
+    """Blocks every ordinary gameplay API during maintenance; admins bypass entirely."""
+    user = signed_user(request)
+    if user['id'] != ADMIN_ID:
+        from system_state import maintenance_state
+        state = maintenance_state()
+        if state['enabled']:
+            raise HTTPException(503, detail={'code': 'MAINTENANCE', 'message': state['message']})
     register(user)
     return user
 

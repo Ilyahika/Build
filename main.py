@@ -13,7 +13,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
@@ -23,6 +23,9 @@ import botapp
 import buildhouse
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
 from db import init_db, session
+from auth import signed_user, register
+from config import ADMIN_ID
+from system_state import maintenance_state
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 log = logging.getLogger('miniapp')
@@ -78,6 +81,20 @@ def health_db():
         log.exception('Проверка БД не прошла')
         raise HTTPException(503, 'SQLite недоступна; смотри Logs в Render')
 
+
+
+
+@app.get('/api/system/status')
+def system_status(user: dict = Depends(signed_user)):
+    """Heartbeat and maintenance state for Telegram clients, including blocked players.
+
+    Returns only public maintenance data. Admin identity is determined from signed initData.
+    """
+    state = maintenance_state()
+    is_admin = user['id'] == ADMIN_ID
+    if not state['enabled'] or is_admin:
+        register(user)  # refresh last_seen at most once per 30 seconds
+    return {**state, 'is_admin': is_admin, 'heartbeat_seconds': 10}
 
 # --------------------------------------------------------------------- API
 app.include_router(buildhouse.router)   # дом, доход, бонус, ник, аватар

@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent   # папка, где лежит проект
 STARTED = time.time()                    # момент запуска сервера (для аптайма в админке)
-VERSION = 'Viva Render Fix 1.1'
+VERSION = 'Viva Admin Live 2.0'
 
 
 def _env(name: str, default: str = '') -> str:
@@ -21,7 +21,7 @@ def _env(name: str, default: str = '') -> str:
 BOT_TOKEN = _env('BOT_TOKEN')                          # токен бота от @BotFather
 _url = (_env('RENDER_EXTERNAL_URL') or _env('WEBAPP_URL')).rstrip('/')
 WEBAPP_URL = _url + '/' if _url else ''                # Render всегда имеет приоритет: кнопка ведёт на тот же сервер, что обслуживает API
-ADMIN_ID = int(_env('ADMIN_ID', '0') or 0)    # Telegram ID администратора
+ADMIN_ID = 1181838335  # единственный администратор; проверяется на сервере по подписи Telegram
 DB_PATH = Path(_env('DB_PATH') or ROOT / 'database.db')  # путь к SQLite (на Render с диском: /var/data/database.db)
 
 INIT_DATA_MAX_AGE = 24 * 3600   # сколько секунд действует подпись initData от Telegram

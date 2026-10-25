@@ -3,13 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#06141c">
+<meta name="theme-color" content="#0d0d0d">
 <!-- Адрес сервера API (Render), БЕЗ / в конце. Пусто = тот же сервер, что отдал страницу. -->
 <meta name="api-base" content="">
 <title>Viva</title>
-<link rel="stylesheet" href="./style.css?v=12">
+<link rel="stylesheet" href="./style.css?v=adminlive2">
 </head>
 <body>
+<!-- Полноэкранный экран техработ: скрыт для администратора и вне режима обслуживания -->
+<div id="maintenanceScreen" hidden role="alertdialog" aria-modal="true" aria-labelledby="maintenanceHeading">
+  <div class="maint-shell">
+    <div class="maint-emblem" aria-hidden="true">⚠</div>
+    <div class="maint-eyebrow">VIVA · SYSTEM UPDATE</div>
+    <h1 id="maintenanceHeading">ТЕХНИЧЕСКИЕ<br><em>РАБОТЫ</em></h1>
+    <div class="maint-stripe" aria-hidden="true"></div>
+    <p id="maintenanceMessage">Мы улучшаем игру. Пожалуйста, зайдите немного позже.</p>
+    <div class="maint-pulse"><span></span> Идёт обслуживание сервера</div>
+    <small>Страница сама откроет игру после завершения работ.<br>Проверка каждые 10 секунд.</small>
+  </div>
+</div>
 <!-- Заставка Viva: показывается, пока приложение грузится; при ошибке здесь же выводится диагностика -->
 <div id="boot">
   <svg class="logo" viewBox="0 0 300 190" aria-hidden="true">
@@ -37,7 +49,7 @@
 <script>
 /* ============ Загрузчик с диагностикой. Не зависит от внешних файлов: работает, даже если app.js или telegram.org недоступны ============ */
 (function () {
-  var VER = '12', T0 = Date.now(), LOG = [];
+  var VER = 'adminlive2', T0 = Date.now(), LOG = [];
   var ICON = {ok: '✅', wait: '⏳', fail: '❌', warn: '⚠️'};
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }

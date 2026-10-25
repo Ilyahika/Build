@@ -21,6 +21,7 @@ const avatarOf = a => (!a || a === '🏠') ? '🎣' : a;        // у стары
 let S = null;                    // состояние игрока с сервера
 let tab = 'fish', sub = null;    // текущая вкладка (sub нужен админ-панели)
 let busy = false, lastSync = 0;
+let maintenanceActive = false, systemChecking = false;
 
 /** Всплывающее уведомление внизу экрана. */
 function note(msg) {
@@ -57,6 +58,10 @@ async function api(path, body, {timeout = 15000, retries = 0} = {}) {
       const r = await fetch(API_BASE + path, {...init, signal: ctl.signal});
       const j = await r.json().catch(() => ({}));
       if (r.ok) return j;
+      if (r.status === 503 && j.detail?.code === 'MAINTENANCE') {
+        showMaintenance(j.detail.message);
+        throw new ApiError('В игре проводятся технические работы', 503, false);
+      }
       const msg = typeof j.detail === 'string' ? j.detail : `Ошибка сервера ${r.status}`;
       throw new ApiError(msg, r.status, r.status >= 502 && r.status <= 504);
     } catch (e) {
@@ -85,6 +90,49 @@ async function post(path, body = {}) {
   paint();
   return r;
 }
+
+
+/* ---------- Техработы: сервер управляет доступом, экран только показывает состояние ---------- */
+function showMaintenance(message) {
+  maintenanceActive = true;
+  const el = $('maintenanceScreen');
+  if (!el) return;
+  $('maintenanceMessage').textContent = message || 'В игре проводятся технические работы.';
+  el.hidden = false;
+  document.body.classList.add('maintenance-mode');
+  window.__appReady = true;
+  window.__hideBoot?.();
+}
+function hideMaintenance() {
+  maintenanceActive = false;
+  const el = $('maintenanceScreen');
+  if (el) el.hidden = true;
+  document.body.classList.remove('maintenance-mode');
+}
+
+async function pollSystem() {
+  if (systemChecking || !tg?.initData || document.visibilityState !== 'visible') return;
+  systemChecking = true;
+  try {
+    const state = await api('/api/system/status', undefined, {timeout: 10000});
+    if (state.enabled && !state.is_admin) {
+      showMaintenance(state.message);
+    } else {
+      const wasOn = maintenanceActive;
+      hideMaintenance();
+      if (wasOn || !S) {
+        setS(await api('/api/bh/state', undefined, {timeout: 15000}));
+        paint();
+        window.__appReady = true;
+        window.__hideBoot?.();
+      }
+    }
+  } catch (err) {
+    // Временная потеря сети не должна выключать экран техработ.
+    if (!maintenanceActive && !S) dbg('system', 'Состояние игры', 'warn', err.message);
+  } finally { systemChecking = false; }
+}
+setInterval(pollSystem, 10000);
 
 /* ---------- 3. Запуск ---------- */
 /** Простой запрос с таймаутом для проверок (не бросает исключений). */
@@ -127,22 +175,36 @@ async function boot() {
   if (!d.ok) { dbg('db', '5. База данных', 'fail', d.status ? `HTTP ${d.status}: ${d.text}` : `нет ответа: ${d.err}`); return; }
   dbg('db', '5. База данных', d.json?.tables_ready ? 'ok' : 'warn', d.json?.tables_ready ? 'готова' : 'подключена, но таблицы не готовы: ' + d.text);
 
-  dbg('state', '6. Профиль игрока', 'wait', 'Загружаем профиль…');
+  dbg('system', '6. Доступность игры', 'wait', 'Проверяем состояние игры…');
+  const sys = await probe('/api/system/status', {'X-Telegram-Init-Data': tg.initData}, 15000);
+  if (!sys.ok) {
+    dbg('system', '6. Доступность игры', 'fail', `HTTP ${sys.status || 0}: ${sys.json?.detail || sys.err || sys.text}`);
+    return;
+  }
+  if (sys.json?.enabled && !sys.json?.is_admin) {
+    dbg('system', '6. Доступность игры', 'ok', 'Проводятся техработы — показан экран обслуживания');
+    showMaintenance(sys.json.message);
+    return;
+  }
+  dbg('system', '6. Доступность игры', 'ok', sys.json?.is_admin ? 'Администратор: доступ разрешён' : 'Игра доступна');
+
+  dbg('state', '7. Профиль игрока', 'wait', 'Загружаем профиль…');
   const s = await probe('/api/bh/state', {'X-Telegram-Init-Data': tg.initData}, 20000);
   if (!s.ok) {
     const detail = s.json?.detail || s.text || s.err;
-    dbg('state', '6. Профиль игрока', 'fail', `${s.status ? 'HTTP ' + s.status : 'нет ответа'}: ${detail}` +
+    dbg('state', '7. Профиль игрока', 'fail', `${s.status ? 'HTTP ' + s.status : 'нет ответа'}: ${detail}` +
       (s.status === 401 ? ' → BOT_TOKEN на сервере не принадлежит этому боту (или данные устарели)' : s.status === 503 ? ' → BOT_TOKEN не задан на Render' : ''));
     return;
   }
-  dbg('state', '6. Профиль игрока', 'ok', `получен за ${s.ms} мс`);
+  dbg('state', '7. Профиль игрока', 'ok', `получен за ${s.ms} мс`);
   try { setS(s.json); paint(); window.__appReady = true; window.__hideBoot && window.__hideBoot(); }
   catch (e) { dbg('paint', 'Отрисовка экрана', 'fail', `${e.name}: ${e.message}`); }
 }
 
 /** Вернулись в приложение после долгого отсутствия — обновляем данные. */
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S && Date.now() - lastSync > 30000 && tab !== 'admin') {
+  if (document.visibilityState === 'visible') pollSystem();
+  if (document.visibilityState === 'visible' && S && !maintenanceActive && Date.now() - lastSync > 30000 && tab !== 'admin') {
     run(async () => { setS(await api('/api/bh/state')); paint(); });
   }
 });

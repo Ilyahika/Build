@@ -119,3 +119,72 @@ nav button{max-width:96px;font-size:10px}nav button.on{background:linear-gradien
 @keyframes bob{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(7px) rotate(3deg)}}
 @keyframes wave{to{transform:translateX(-120px)}}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+
+/* ================================================== VIVA ADMIN LIVE 2.0 ==================================== */
+body.adm{--bg:#080809;--p:#151518;--p2:#1b1b20;--ln:#303036;--t:#f5f5f5;--m:#a6a6ac;--y:#ffd02b;--r:#ff4b48;--g:#71d19a;background:#080809}
+body.adm .wrap{max-width:1140px}
+body.adm .panel{border-radius:18px;padding:18px;border-color:#29292d;background:linear-gradient(180deg,#18181c,#121215);box-shadow:0 12px 28px #0005}
+body.adm h2{color:#efefef;font-size:13px;letter-spacing:.09em}
+body.adm .sub{gap:8px;padding:6px;border-radius:14px;background:#111114;border:1px solid #2b2b30;position:sticky;top:6px;z-index:10}
+body.adm .sub .chip{border:0;border-radius:10px;background:transparent;color:#bdbdc0;font-size:12px;padding:11px 13px}
+body.adm .sub .chip.on{background:#ffce29;color:#151515;box-shadow:0 5px 18px #ffc62922}
+body.adm .kpi{grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px}
+body.adm .kpi>div{border-radius:14px;padding:16px;background:#1e1e22;border:1px solid #333338}
+body.adm .kpi b{display:block;font-size:25px;letter-spacing:-.04em;margin-top:4px}
+body.adm .kpi small{color:#b5b5ba;font-size:10px}
+body.adm .chk-grid{grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:10px}
+body.adm .chk{border-left-width:5px;border-radius:12px;padding:15px;background:#1e1e22}
+body.adm .chk.ok{border-left-color:#ffd02b}
+body.adm .chk small{line-height:1.5;display:block;margin-top:6px}
+body.adm .prow{padding:13px 14px;background:#1d1d20;border-radius:12px;border-color:#37373a}
+body.adm .prow:hover{background:#222226}
+body.adm .modal{background:#000d;backdrop-filter:blur(7px)}
+body.adm .modal>div{border:1px solid #44444b;border-top:3px solid var(--y);border-radius:20px;background:#171719;box-shadow:0 25px 90px #000a}
+body.adm .kv div{border-radius:12px;background:#202024;padding:13px}
+body.adm .kv small{margin-bottom:4px}
+body.adm .fld{padding:7px 0}
+body.adm button{border-radius:10px}
+body.adm input,body.adm select,body.adm textarea{background:#101012;border-color:#414147}
+body.adm nav{background:#0a0a0ceF;border-color:#303036}
+body.adm .topbar{border:1px solid #2d2d33;background:#171719;border-radius:16px;padding:8px 13px;margin-bottom:13px}
+.admin-hero{border-radius:20px;padding:19px 22px;background:linear-gradient(115deg,#272011,#161618 49%,#2b1214);border:1px solid #44372a;margin:10px 0 14px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.admin-hero h1{font-size:24px;letter-spacing:-.03em;margin:0 0 4px;font-weight:900;color:#fff}
+.admin-hero h1 span{color:#ffce29}
+.admin-hero p{font-size:12px;margin:0;color:#c5c0b8}
+.admin-emblem{width:56px;height:56px;border-radius:15px;background:#ffe029;color:#17120a;display:grid;place-items:center;font-size:44px;line-height:1;font-weight:900;box-shadow:0 4px 22px #ffd02b33;flex:none}
+.admin-status{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border-radius:99px;border:1px solid #4a4a4e;background:#19191b;font-size:12px;font-weight:800;white-space:nowrap}
+.admin-status .dot{height:8px;width:8px;display:inline-block;border-radius:50%;background:#71d19a;box-shadow:0 0 12px #71d19a}
+.admin-status.offline .dot{background:#ff4b48;box-shadow:0 0 12px #ff4b48}
+.admin-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media(max-width:720px){.admin-two{grid-template-columns:1fr}.admin-hero{padding:15px}.admin-hero h1{font-size:20px}.admin-emblem{width:45px;height:45px;font-size:36px}}
+.live-dot{width:8px;height:8px;display:inline-block;border-radius:50%;background:#71d19a;box-shadow:0 0 8px #71d19a;margin-right:5px}
+.admin-warning{border:1px solid #6e3732;background:linear-gradient(120deg,#381b19,#1a1515);padding:16px;border-radius:14px;line-height:1.5}
+.admin-action-bar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.admin-action-bar button{flex:1}
+.works-box{padding:20px;border:1px solid #3b3432;border-radius:17px;background:#1b1a1a;margin:12px 0}
+.works-box.active{border-color:#c54b43;background:linear-gradient(145deg,#35191a,#1b1819)}
+.works-big{font-size:26px;font-weight:900;letter-spacing:-.02em;margin:6px 0}
+.works-note{font-size:12px;color:#b4b3ba;margin-top:12px;line-height:1.5}
+.live-row{display:flex;align-items:center;gap:12px;padding:13px 14px;background:#1d1d21;border:1px solid #35353b;border-radius:13px;margin:8px 0;cursor:pointer}
+.live-row:hover{border-color:#ffce29}
+.live-row .av{width:35px;font-size:26px}
+.live-row .grow{flex:1;min-width:0;overflow:hidden}
+.live-row .grow b{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.live-row .grow small{color:#aaaab0}
+
+/* Полноэкранные технические работы — только обычные игроки. Никаких кнопок закрытия. */
+#maintenanceScreen[hidden]{display:none!important}
+#maintenanceScreen{position:fixed;inset:0;z-index:100000;background:radial-gradient(ellipse at 50% 20%,#332314 0%,#131313 44%,#070707 100%);color:#fff;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:24px 18px;text-align:center}
+.maint-shell{max-width:510px;width:100%;margin:auto}
+.maint-emblem{width:96px;height:96px;border:2px solid #ffca22;background:#24201a;display:grid;place-items:center;margin:0 auto 25px;border-radius:25px;color:#ffcb2a;font-size:60px;font-weight:900;box-shadow:0 0 0 10px #ffcc2010,0 16px 70px #0008}
+.maint-eyebrow{font-size:12px;font-weight:900;letter-spacing:.26em;color:#ffcb2a}
+#maintenanceHeading{font-size:clamp(32px,9vw,62px);letter-spacing:-.045em;line-height:1.03;margin:13px 0;font-weight:950}
+#maintenanceHeading em{font-style:normal;color:#ffcf2b}
+.maint-stripe{height:9px;max-width:230px;margin:25px auto;background:repeating-linear-gradient(110deg,#ffca28 0 20px,#181818 20px 40px);border:1px solid #ae8b29;border-radius:6px}
+#maintenanceMessage{font-size:16px;line-height:1.65;color:#dedede;margin:0 auto 28px;max-width:440px;white-space:pre-wrap;overflow-wrap:anywhere}
+.maint-pulse{display:inline-flex;align-items:center;gap:10px;background:#272222;border:1px solid #49302e;border-radius:100px;padding:12px 17px;color:#f8e5e3;font-size:13px;font-weight:800;margin-bottom:28px}
+.maint-pulse span{width:9px;height:9px;border-radius:50%;background:#ed4e48;box-shadow:0 0 14px #f34c44;animation:maintblink 1.5s infinite}
+@keyframes maintblink{50%{opacity:.25}}
+.maint-shell small{display:block;font-size:12px;line-height:1.6;color:#98989b}
+body.maintenance-mode{overflow:hidden}

@@ -5,7 +5,7 @@ window.Admin = (() => {
   const PAGE = 25;                                   // игроков на странице
   // Состояние панели
   const A = {sub: 'dash', stats: null, list: null, q: '', flt: 'all', sort: 'last_seen', page: 0,
-             card: null, log: null, bc: null, bcText: '', timer: null};
+             card: null, log: null, bc: null, bcText: '', timer: null, live: null, maint: null, autoBusy: false};
 
   /* ---------- утилиты ---------- */
   const enc = encodeURIComponent;
@@ -18,7 +18,7 @@ window.Admin = (() => {
   const date = ts => ts ? new Date(ts * 1000).toLocaleString('ru-RU') : '—';
   const ACT_NAMES = {coins_add: '± доллары', coins_set: '= доллары', gems_add: '± звёзды', gems_set: '= звёзды', house_add: '± уровень дома',
     house_set: '= уровень дома', give_car: 'подарок: машина', clear_garage: 'очистка гаража', block: 'блокировка', unblock: 'разблокировка',
-    refill_energy: 'энергия', daily_reset: 'сброс бонуса', end_game: 'сброс игры', reset: 'СБРОС АККАУНТА', message: 'сообщение', broadcast: 'рассылка'};
+    refill_energy: 'энергия', daily_reset: 'сброс бонуса', end_game: 'сброс игры', reset: 'СБРОС АККАУНТА', message: 'сообщение', broadcast: 'рассылка', maintenance_on: 'техработы: включены', maintenance_off: 'техработы: выключены'};
 
   /** Перерисовка с сохранением прокрутки окна игрока и текста рассылки (чтобы не «прыгало»). */
   function repaint() {
@@ -32,7 +32,9 @@ window.Admin = (() => {
 
   /* ---------- загрузка данных вкладок ---------- */
   const loaders = {
-    dash: async deep => { A.stats = await api('/api/admin/stats' + (deep ? '?deep=true' : ''), undefined, {timeout: 30000}); },
+    dash: async deep => { A.stats = await api('/api/admin/stats' + (deep ? '?deep=true' : ''), undefined, {timeout: 30000}); A.maint = A.stats.maintenance; },
+    live: async () => { A.live = await api('/api/admin/live'); },
+    works: async () => { A.maint = await api('/api/admin/maintenance'); },
     players: async () => { A.list = await api(`/api/admin/players?q=${enc(A.q)}&flt=${A.flt}&sort=${A.sort}&offset=${A.page * PAGE}&limit=${PAGE}`); },
     bc: async () => { A.bc = await api('/api/admin/broadcast'); pollBc(); },
     log: async () => { A.log = (await api('/api/admin/log?limit=60')).log; },
@@ -49,29 +51,93 @@ window.Admin = (() => {
   const setSub = k => { syncQ(); A.sub = k; load(); };
 
   /* ---------- вкладка «Сводка» ---------- */
+  function banner(){
+    const w = A.maint?.enabled;
+    return `<div class="admin-hero"><div class="admin-emblem">∞</div><div style="flex:1"><h1>VIVA <span>CONTROL</span></h1><p>Администратор ID 1181838335 · контроль игроков и инфраструктуры</p></div>
+      <div class="admin-status ${w ? 'offline' : ''}"><i class="dot"></i>${w ? 'ТЕХРАБОТЫ' : 'ИГРА ОТКРЫТА'}</div></div>`;
+  }
   function dashV() {
-    if (!A.stats) return '<div class="panel splash"><div class="spin"></div>Загрузка…</div>';
-    const {stats: s, checks, info, rows, db_ms} = A.stats;
-    const kpi = (a, b) => `<div><small>${a}</small><b>${b}</b></div>`;
-    const maxLv = Math.max(1, ...Object.values(s.levels));
-    const icon = {ok: 'OK', warn: 'ВНИМАНИЕ', fail: 'ОШИБКА', skip: '—'};
-    return `<div class="panel"><h2>Сводка</h2><div class="kpi">
-        ${kpi('Игроков', fmt(s.players))}${kpi('Онлайн (15 мин)', fmt(s.online_15m))}${kpi('Активны 24 ч', fmt(s.active_24h))}${kpi('Новые 24 ч', fmt(s.new_24h))}
-        ${kpi('Заблокировано', fmt(s.blocked))}${kpi('$ в игре', fmt(s.coins_total))}${kpi('⭐ в игре', fmt(s.gems_total))}
-        ${kpi('Игр / побед', fmt(s.games_played) + ' / ' + fmt(s.games_won))}${kpi('Тапов', fmt(s.taps))}${kpi('Машин', fmt(s.cars))}</div></div>
-      <div class="panel"><h2>Дома по уровням</h2><div class="bars">${Object.entries(s.levels).map(([lv, n]) =>
-        `<div><span>Уровень ${lv}</span><i style="width:${n / maxLv * 60}%"></i><em>${n}</em></div>`).join('') || '<p class="m">Нет данных</p>'}</div></div>
-      <div class="panel"><h2>Диагностика · БД ${db_ms} мс</h2><div class="chk-grid">${checks.map(c =>
-        `<div class="chk ${c.s}"><b>${esc(c.n)}<span class="m">${icon[c.s] || ''}</span></b><small>${esc(c.d)}</small></div>`).join('')}</div>
-        <div class="row" style="margin-top:10px"><button onclick="Admin.load()">Обновить</button><button class="ghost" onclick="Admin.load(true)">Глубокая проверка БД</button></div></div>
-      <div class="panel"><h2>Система</h2>${Object.entries(info).map(([k, v]) => `<div class="m">${esc(k)}: <b style="color:var(--t)">${esc(v)}</b></div>`).join('')}
-        <div class="m" style="margin-top:6px">Записей: ${Object.entries(rows).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</div></div>`;
+    if (!A.stats) return '<div class="panel splash"><div class="spin"></div>Загрузка аналитики…</div>';
+    const {stats: st, checks, info, rows, db_ms} = A.stats;
+    const kpi = (name, value, suffix='') => `<div><small>${name}</small><b>${value}${suffix}</b></div>`;
+    const maxLv = Math.max(1, ...Object.values(st.levels));
+    const icon = {ok:'OK', warn:'ВНИМАНИЕ', fail:'ОШИБКА', skip:'—'};
+    return `${banner()}
+      <div class="panel"><div class="row" style="justify-content:space-between"><h2>ОБЗОР СЕРВЕРА</h2><button class="ghost sm" onclick="Admin.load()">↻ Обновить</button></div>
+        <div class="kpi">
+          ${kpi('В ИГРЕ СЕЙЧАС',`<span class="live-dot"></span>${fmt(st.online_now)}`)}
+          ${kpi('ВСЕГО ИГРОКОВ',fmt(st.players))}
+          ${kpi('АКТИВНЫЕ 15 МИН',fmt(st.online_15m))}
+          ${kpi('АКТИВНЫЕ ЗА СУТКИ',fmt(st.active_24h))}
+          ${kpi('НОВЫЕ ЗА СУТКИ',fmt(st.new_24h))}
+          ${kpi('ЗАБЛОКИРОВАНЫ',fmt(st.blocked))}
+          ${kpi('МОНЕТЫ ИГРОКОВ','$'+fmt(st.coins_total))}
+          ${kpi('ЗВЁЗДЫ ИГРОКОВ','⭐ '+fmt(st.gems_total))}
+          ${kpi('ИГРЫ / ПОБЕДЫ',fmt(st.games_played)+' / '+fmt(st.games_won))}
+          ${kpi('ТАПОВ',fmt(st.taps))}
+          ${kpi('МАШИН',fmt(st.cars))}
+          ${kpi('ОТКЛИК SQLite',fmt(db_ms)+' мс')}
+        </div>
+        <p class="m" style="margin-top:12px">«В игре сейчас» — игроки, приславшие подписанный запрос за последние 75 секунд. Обновление сводки каждые 12 секунд.</p>
+      </div>
+      <div class="admin-two">
+        <div class="panel"><h2>ТЕХНИЧЕСКОЕ СОСТОЯНИЕ</h2>
+          <div class="works-box ${A.maint?.enabled ? 'active' : ''}">
+            <b>${A.maint?.enabled ? '🔴 Технические работы включены' : '🟢 Игра доступна игрокам'}</b>
+            <p class="m">${esc(A.maint?.enabled ? 'Все обычные игроки видят полноэкранную заглушку. Доступ к игровым API закрыт.' : 'Игроки могут пользоваться Mini App в обычном режиме.')}</p>
+            <button class="${A.maint?.enabled ? '' : 'red'}" onclick="Admin.setSub('works')">Управление доступом</button>
+          </div>
+        </div>
+        <div class="panel"><h2>ПОПУЛЯРНОСТЬ УРОВНЕЙ ДОМОВ</h2>
+          <div class="bars">${Object.entries(st.levels).map(([lv,n])=>`<div><span>Уровень ${lv}</span><i style="width:${n/maxLv*65}%"></i><em>${n}</em></div>`).join('') || '<p class="m">Пока нет данных</p>'}</div>
+          <button class="ghost sm" onclick="Admin.setSub('live')" style="margin-top:12px">Игроки онлайн</button>
+        </div>
+      </div>
+      <div class="panel"><div class="row" style="justify-content:space-between"><h2>ДИАГНОСТИКА · БАЗА ДАННЫХ</h2><button class="ghost sm" onclick="Admin.load(true)">Глубокая проверка</button></div>
+        <div class="chk-grid">${checks.map(c => `<div class="chk ${c.s}"><b>${esc(c.n)}<span class="m">${icon[c.s] || ''}</span></b><small>${esc(c.d)}</small></div>`).join('')}</div>
+      </div>
+      <div class="panel"><h2>ИНФОРМАЦИЯ О СЕРВЕРЕ</h2>
+        <div class="kv">${Object.entries(info).map(([k,v])=>`<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>
+        <p class="m">Таблицы: ${Object.entries(rows).map(([k,v])=>`${esc(k)} — ${v}`).join(' · ')}</p>
+      </div>`;
+  }
+  function liveV(){
+    const L=A.live;
+    if(!L) return '<div class="panel splash"><div class="spin"></div>Загрузка онлайна…</div>';
+    return `${banner()}<div class="panel">
+      <div class="row" style="justify-content:space-between"><div><h2>ОНЛАЙН В ИГРЕ</h2><p class="m" style="margin:0">${esc(L.definition)} · обновление каждые 12 секунд</p></div><button class="ghost sm" onclick="Admin.load()">↻ Обновить</button></div>
+      <div class="kpi" style="margin-top:14px"><div><small>СЕЙЧАС В ИГРЕ</small><b>${fmt(L.count)}</b></div><div><small>АКТИВНЫЕ «МИНЫ»</small><b>${fmt(L.active_mines)}</b></div><div><small>ПОСЛЕДНЯЯ ПРОВЕРКА</small><b style="font-size:15px">${date(L.updated_at)}</b></div></div>
+      <div style="margin-top:16px">${L.online.length ? L.online.map(p => `<div class="live-row" onclick="Admin.open(${p.telegram_id})"><span class="av">${esc(p.avatar||'👤')}</span><div class="grow"><b><span class="live-dot"></span>${esc(p.nickname || p.telegram_name)}</b><small>ID ${p.telegram_id} · дом ${p.house} · ${p.blocked?'Заблокирован':'активен'}</small></div><div style="text-align:right"><b>$${fmt(p.coins)}</b><div class="m">${ago(p.last_seen)}</div></div></div>`).join(''):'<div class="panel"><p class="m">Сейчас нет активных игроков. Они появятся здесь после открытия Mini App.</p></div>'}</div>
+    </div>`;
+  }
+  function worksV(){
+    const w=A.maint;
+    if(!w) return '<div class="panel splash"><div class="spin"></div>Загрузка режима техработ…</div>';
+    return `${banner()}<div class="panel"><h2>УПРАВЛЕНИЕ ТЕХНИЧЕСКИМИ РАБОТАМИ</h2>
+      <div class="works-box ${w.enabled?'active':''}"><div class="admin-status ${w.enabled?'offline':''}"><i class="dot"></i>${w.enabled?'СЕРВЕР ЗАКРЫТ ДЛЯ ИГРОКОВ':'ИГРА ДОСТУПНА'}</div>
+        <div class="works-big">${w.enabled?'Техработы включены':'Техработы выключены'}</div>
+        <p class="m">Администратор продолжит видеть игру и панель управления. Обычные игроки увидят экран на весь дисплей; игровые запросы сервер отклонит.</p>
+      </div>
+      <label class="m" for="works_msg">Сообщение игрокам (до 500 символов)</label>
+      <textarea id="works_msg" rows="4" maxlength="500" style="margin-top:8px">${esc(w.message)}</textarea>
+      <div class="admin-action-bar"><button class="red" onclick="Admin.toggleMaintenance(true)">${w.enabled?'Обновить сообщение':'🔴 Включить техработы'}</button>
+        <button class="ghost" onclick="Admin.toggleMaintenance(false)" ${!w.enabled?'disabled':''}>🟢 Выключить техработы</button></div>
+      <p class="works-note">Игроки узнают об изменении через периодический опрос (обычно в течение 10–15 секунд). Режим хранится в SQLite3. При выключении экран автоматически исчезнет и игровой профиль перезагрузится.</p>
+      <div class="panel"><h2>ПОСЛЕДНЕЕ ИЗМЕНЕНИЕ</h2><p class="m">${w.updated_at?date(w.updated_at):'Режим ещё не меняли'} ${w.updated_by?'· админ '+w.updated_by:''}</p></div>
+    </div>`;
+  }
+  async function toggleMaintenance(enabled){
+    const message = $('works_msg')?.value.trim() || 'Мы обновляем игру и улучшаем сервер. Пожалуйста, зайдите немного позже.';
+    const confirmText = enabled ? 'Включить техработы? Все обычные игроки увидят полноэкранный экран, игровые действия будут заблокированы.' : 'Выключить техработы и снова открыть игру всем игрокам?';
+    if(!await ask(confirmText)) return;
+    await run(async()=>{A.maint=await api('/api/admin/maintenance',{enabled,message}); note(enabled?'🔴 Техработы включены':'🟢 Игра открыта'); await loaders.dash();});
+    repaint();
   }
 
   /* ---------- вкладка «Игроки» ---------- */
   function playersV() {
     const L = A.list;
-    const flts = [['all', 'Все'], ['online', '🟢 Онлайн'], ['blocked', '🚫 Заблок.'], ['new', '🆕 Новые']];
+    const flts = [['all', 'Все'], ['live', '🟢 Сейчас'], ['online', 'За 15 мин'], ['blocked', '🚫 Заблок.'], ['new', '🆕 Новые']];
     const sorts = [['last_seen', 'По активности'], ['coins', 'По $'], ['gems', 'По ⭐'], ['house', 'По дому'], ['earned', 'По заработку'], ['created_at', 'По регистрации']];
     const bar = `<div class="panel"><h2>👥 Игроки${L ? ` · ${fmt(L.total)}` : ''}</h2>
       <div class="row"><input id="a_q" placeholder="Поиск: ID, имя, ник" value="${esc(A.q)}" onkeydown="if(event.key==='Enter')Admin.search()"><button onclick="Admin.search()">Найти</button></div>
@@ -203,10 +269,17 @@ window.Admin = (() => {
 
   /* ---------- главный экран панели ---------- */
   function view() {
-    const tabs = [['dash', '📊 Сводка'], ['players', '👥 Игроки'], ['bc', '📣 Рассылка'], ['log', '📜 Журнал']];
+    const tabs = [['dash', '◫ Сводка'], ['live', '● Онлайн'], ['players', '👥 Игроки'], ['works', '⚠ Техработы'], ['bc', '📣 Рассылка'], ['log', '≡ Журнал']];
     const nav = `<div class="sub">${tabs.map(([k, t]) => `<button class="chip ${A.sub === k ? 'on' : ''}" onclick="Admin.setSub('${k}')">${t}</button>`).join('')}</div>`;
-    return nav + {dash: dashV, players: playersV, bc: bcV, log: logV}[A.sub]() + (A.card ? cardV() : '');
+    return nav + {dash: dashV, live:liveV, players: playersV, works:worksV, bc: bcV, log: logV}[A.sub]() + (A.card ? cardV() : '');
   }
 
-  return {view, load, setSub, search, setFlt, setSort, page, open, close, act, actInput, danger, sendMsg, sendBc};
+  // На открытой вкладке сводки или онлайна статистика обновляется без перезагрузки страницы.
+  setInterval(async()=>{
+    if(tab!=='admin' || document.visibilityState!=='visible' || A.card || A.autoBusy || !['dash','live'].includes(A.sub)) return;
+    A.autoBusy=true;
+    try { await loaders[A.sub](); repaint(); } catch (_) { /* разовый сетевой сбой — не стираем старые данные */ }
+    finally { A.autoBusy=false; }
+  },12000);
+  return {view, load, setSub, search, setFlt, setSort, page, open, close, act, actInput, danger, sendMsg, sendBc, toggleMaintenance};
 })();

@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS admin_log (        -- журнал действий �
     value    TEXT
 );
 CREATE TABLE IF NOT EXISTS db_probe (id TEXT PRIMARY KEY, value TEXT NOT NULL);  -- проверка записи в админке
+CREATE TABLE IF NOT EXISTS site_settings (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    enabled INTEGER NOT NULL DEFAULT 0,
+    message TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    updated_by INTEGER
+);
 '''
 
 # Индексы создаются после миграций (в старых базах колонок могло не быть)

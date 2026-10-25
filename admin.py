@@ -23,6 +23,7 @@ from auth import admin_user
 from buildhouse import HOUSE_NAMES, MAX_ENERGY, MAX_LEVEL
 from catalog import CARS, car_info
 from config import ADMIN_ID, BOT_TOKEN, DB_PATH, STARTED, VERSION, WEBAPP_URL
+from system_state import maintenance_state, set_maintenance, DEFAULT_MESSAGE
 from db import session
 
 log = logging.getLogger('miniapp.admin')
@@ -57,10 +58,11 @@ def stats(deep: bool = False, admin: dict = Depends(admin_user)):
                                   COALESCE(SUM(CASE WHEN telegram_id != ? THEN coins END), 0) AS coins_total,
                                   COALESCE(SUM(games_played), 0) AS games_played, COALESCE(SUM(games_won), 0) AS games_won,
                                   COALESCE(SUM(created_at > ?), 0) AS new_24h FROM players''', (ADMIN_ID, now - 86400)).fetchone()
-        bh = db.execute('''SELECT COALESCE(SUM(blocked = 1), 0) AS blocked, COALESCE(SUM(last_seen > ?), 0) AS online_15m,
+        bh = db.execute('''SELECT COALESCE(SUM(blocked = 1), 0) AS blocked, COALESCE(SUM(telegram_id != ? AND last_seen > ?), 0) AS online_now,
+                                  COALESCE(SUM(last_seen > ?), 0) AS online_15m,
                                   COALESCE(SUM(last_seen > ?), 0) AS active_24h,
                                   COALESCE(SUM(CASE WHEN telegram_id != ? THEN gems END), 0) AS gems_total,
-                                  COALESCE(SUM(taps), 0) AS taps FROM bh''', (now - 900, now - 86400, ADMIN_ID)).fetchone()
+                                  COALESCE(SUM(taps), 0) AS taps FROM bh''', (ADMIN_ID, now - 75, now - 900, now - 86400, ADMIN_ID)).fetchone()
         levels = {str(r[0]): r[1] for r in db.execute('SELECT house, COUNT(*) FROM bh GROUP BY house ORDER BY house')}
         rows = {t: db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
                 for t in ('players', 'bh', 'cars', 'mines2', 'admin_log')}   # имена таблиц — из белого списка
@@ -82,6 +84,8 @@ def stats(deep: bool = False, admin: dict = Depends(admin_user)):
         check('Polling бота', 'ok' if bot.polling else 'warn', 'работает' if bot.polling else (bot.error or 'не запущен')),
         check('WEBAPP_URL', 'ok' if WEBAPP_URL.startswith('https://') else 'fail', WEBAPP_URL or 'не задан'),
         check('SQLite запись/чтение', 'ok' if probe_ok else 'fail', f'{ms} мс'),
+        check('Технические работы', 'warn' if maintenance_state()['enabled'] else 'ok',
+              'включены' if maintenance_state()['enabled'] else 'игра открыта'),
         check('Целостность БД', ('ok' if integrity == 'ok' else 'fail') if deep else 'skip',
               integrity if deep else 'не запускалась — нажми «Глубокая проверка»'),
         check('Файл БД', 'ok' if DB_PATH.exists() else 'fail', f'{size_kb} КБ'),
@@ -93,7 +97,7 @@ def stats(deep: bool = False, admin: dict = Depends(admin_user)):
             'Сервер (UTC)': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()), 'Путь БД': str(DB_PATH), 'ADMIN_ID': ADMIN_ID}
     catalog = [{'idx': i, 'name': n, 'value': v} for i, (n, v) in enumerate(CARS)]   # для выбора машины в подарок
     return {'stats': st, 'checks': checks, 'info': info, 'rows': rows, 'db_ms': ms, 'catalog': catalog,
-            'house_names': HOUSE_NAMES}
+            'house_names': HOUSE_NAMES, 'maintenance': maintenance_state()}
 
 
 # =============================================================================== ИГРОКИ
@@ -116,6 +120,8 @@ def players(q: str = '', flt: str = 'all', sort: str = 'last_seen', offset: int 
     where, args = ['1=1'], []
     if flt == 'online':
         where.append('b.last_seen > ?'); args.append(now - 900)
+    elif flt == 'live':
+        where.append('b.last_seen > ?'); args.append(now - 75)
     elif flt == 'blocked':
         where.append('b.blocked = 1')
     elif flt == 'new':
@@ -317,3 +323,35 @@ def admin_log(limit: int = 50, admin: dict = Depends(admin_user)):
         rows = db.execute('SELECT ts, admin_id, target, action, value FROM admin_log ORDER BY id DESC LIMIT ?',
                           (min(max(limit, 1), 200),)).fetchall()
     return {'log': [dict(r) for r in rows]}
+
+
+# ============================================================================= MAINTENANCE / ONLINE
+@router.get('/maintenance')
+def maintenance(admin: dict = Depends(admin_user)):
+    return maintenance_state()
+
+
+class MaintenanceChange(BaseModel):
+    enabled: bool
+    message: str = Field(default=DEFAULT_MESSAGE, max_length=500)
+
+
+@router.post('/maintenance')
+def maintenance_change(data: MaintenanceChange, admin: dict = Depends(admin_user)):
+    return set_maintenance(data.enabled, data.message, admin['id'])
+
+
+@router.get('/live')
+def live_players(admin: dict = Depends(admin_user)):
+    """Approximate current players: last signed heartbeat within 75 seconds."""
+    now = int(time.time())
+    with session() as db:
+        rows = db.execute('''SELECT p.telegram_id, p.telegram_name, p.nickname, p.coins,
+                            b.avatar, b.house, b.last_seen, b.blocked
+                            FROM players p JOIN bh b ON b.telegram_id = p.telegram_id
+                            WHERE b.last_seen >= ? AND p.telegram_id != ?
+                            ORDER BY b.last_seen DESC LIMIT 60''', (now - 75, ADMIN_ID)).fetchall()
+        active_games = db.execute("""SELECT COUNT(*) FROM mines2 m JOIN bh b ON m.telegram_id=b.telegram_id
+                                   WHERE m.status='playing' AND b.last_seen >= ?""", (now - 75,)).fetchone()[0]
+    return {'online': [dict(r) for r in rows], 'count': len(rows), 'active_mines': active_games,
+            'updated_at': now, 'definition': 'Активность за последние 75 секунд (опрос раз в 10 секунд)'}
