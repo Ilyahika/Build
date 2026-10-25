@@ -66,6 +66,43 @@ CREATE TABLE IF NOT EXISTS admin_log (        -- журнал действий �
     value    TEXT
 );
 CREATE TABLE IF NOT EXISTS db_probe (id TEXT PRIMARY KEY, value TEXT NOT NULL);  -- проверка записи в админке
+CREATE TABLE IF NOT EXISTS fishing_progress (
+    telegram_id INTEGER PRIMARY KEY,
+    casts INTEGER NOT NULL DEFAULT 0,
+    catches INTEGER NOT NULL DEFAULT 0,
+    last_cast INTEGER NOT NULL DEFAULT 0,
+    rod TEXT NOT NULL DEFAULT 'starter_rod',
+    tackle TEXT NOT NULL DEFAULT 'starter_lure'
+);
+CREATE TABLE IF NOT EXISTS fishing_fish (
+    telegram_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (telegram_id,item_key)
+);
+CREATE TABLE IF NOT EXISTS fishing_discovered (
+    telegram_id INTEGER NOT NULL,
+    fish_key TEXT NOT NULL,
+    PRIMARY KEY (telegram_id,fish_key)
+);
+CREATE TABLE IF NOT EXISTS fishing_finds (
+    telegram_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (telegram_id,item_key)
+);
+CREATE TABLE IF NOT EXISTS fishing_gear (
+    telegram_id INTEGER NOT NULL,
+    gear_key TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (telegram_id,gear_key)
+);
+CREATE TABLE IF NOT EXISTS fishing_cases (
+    telegram_id INTEGER NOT NULL,
+    case_key TEXT NOT NULL,
+    opened INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (telegram_id,case_key)
+);
 CREATE TABLE IF NOT EXISTS site_settings (
     id INTEGER PRIMARY KEY CHECK(id=1),
     enabled INTEGER NOT NULL DEFAULT 0,
@@ -83,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_players_made ON players(created_at);
 CREATE INDEX IF NOT EXISTS idx_players_coin ON players(coins);
 CREATE INDEX IF NOT EXISTS idx_cars_owner   ON cars(telegram_id, parked);
 CREATE INDEX IF NOT EXISTS idx_log_ts       ON admin_log(ts);
+CREATE INDEX IF NOT EXISTS idx_fish_owner ON fishing_fish(telegram_id);
 '''
 
 # Колонки, которые могли отсутствовать в базах старых версий

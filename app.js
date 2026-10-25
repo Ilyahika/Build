@@ -123,6 +123,7 @@ async function pollSystem() {
       if (wasOn || !S) {
         setS(await api('/api/bh/state', undefined, {timeout: 15000}));
         paint();
+        if(window.Fishing) Fishing.refresh(true).catch(e=>dbg('fishload','8. Рыбалка','warn',e.message));
         window.__appReady = true;
         window.__hideBoot?.();
       }
@@ -197,7 +198,8 @@ async function boot() {
     return;
   }
   dbg('state', '7. Профиль игрока', 'ok', `получен за ${s.ms} мс`);
-  try { setS(s.json); paint(); window.__appReady = true; window.__hideBoot && window.__hideBoot(); }
+  try { setS(s.json); paint(); window.__appReady = true; window.__hideBoot && window.__hideBoot();
+    if(window.Fishing) Fishing.refresh().catch(e => dbg('fishload','8. Рыбалка','warn',e.message)); }
   catch (e) { dbg('paint', 'Отрисовка экрана', 'fail', `${e.name}: ${e.message}`); }
 }
 
@@ -223,27 +225,12 @@ function paint() {
   const items = S.is_admin ? [...NAV, ['admin', '🛡️', 'Админ']] : NAV;
   $('nav').innerHTML = items.map(([k, i, t]) => `<button class="${k === tab ? 'on' : ''}" onclick="go('${k}')"><b>${i}</b>${t}</button>`).join('');
   const views = {
-    fish: () => maintV('Рыбалка', 'Скоро здесь можно будет забросить удочку и поймать первую рыбу.'),
-    gear: () => maintV('Снасти', 'Удочки, наживка и поплавки появятся здесь.'),
-    bag: () => maintV('Рюкзак', 'Улов и найденные вещи будут храниться здесь.'),
+    fish: () => window.Fishing ? Fishing.fishView() : '<div class="panel">Загрузка рыбалки...</div>',
+    gear: () => window.Fishing ? Fishing.gearView() : '<div class="panel">Загрузка снастей...</div>',
+    bag: () => window.Fishing ? Fishing.bagView() : '<div class="panel">Загрузка рюкзака...</div>',
     settings: settingsV,
     admin: () => window.Admin ? Admin.view() : '<div class="panel splash"><div class="spin"></div>Загрузка панели…</div>'};
   $('view').innerHTML = views[tab]();
-}
-
-/** Заглушка «Технические работы» с картинкой. */
-function maintV(title, text) {
-  return `<div class="panel maint">
-    <svg viewBox="0 0 300 170" aria-hidden="true">
-      <defs><clipPath id="mc"><rect x="0" y="95" width="300" height="75" rx="14"/></clipPath></defs>
-      <g clip-path="url(#mc)"><rect x="0" y="95" width="300" height="75" fill="#0c4a66"/>
-      <path class="wv1" d="M-100 112q30-12 60 0t60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0V170H-100z" fill="#1fa3c4" opacity=".5"/></g>
-      <path d="M70 92h150l-18 22H88z" fill="#8a5a2b"/><path d="M150 92V28l52 52z" fill="#f4f4f4"/><path d="M150 28v64" stroke="#8a5a2b" stroke-width="4"/>
-      <circle cx="250" cy="34" r="16" fill="#ffb347" opacity=".9"/>
-      <g transform="translate(34 40)"><path d="M0 40l26-26" stroke="#ffb347" stroke-width="9" stroke-linecap="round"/><circle cx="32" cy="8" r="13" fill="none" stroke="#ffb347" stroke-width="7"/></g>
-    </svg>
-    <h2>🛠 Технические работы</h2>
-    <p class="m">${esc(text)}</p><span class="tag">Раздел «${esc(title)}» скоро откроется</span></div>`;
 }
 
 /** Настройки: аватар и ник. */
@@ -258,6 +245,7 @@ function settingsV() {
 /** Переход между вкладками. Админ-панель подгружается только администратору. */
 async function go(t) {
   tab = t; sub = null; paint();
+  if (['fish','gear','bag'].includes(t) && window.Fishing) run(async () => { await Fishing.refresh(true); });
   if (t === 'admin') run(async () => {
     if (!window.Admin) await loadScript('admin.js?v=' + VER);
     await Admin.load();

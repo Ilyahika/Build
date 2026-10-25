@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, Response
 import admin
 import botapp
 import buildhouse
+import fishing
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
 from db import init_db, session
 from auth import signed_user, register
@@ -76,7 +77,7 @@ def health_db():
     try:
         with session() as db:
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        return {'database': 'connected', 'tables_ready': {'players', 'bh', 'cars', 'mines2'} <= tables}
+        return {'database': 'connected', 'tables_ready': {'players', 'bh', 'cars', 'mines2', 'fishing_progress', 'fishing_fish', 'fishing_finds', 'fishing_gear', 'fishing_cases', 'fishing_discovered'} <= tables}
     except Exception:
         log.exception('Проверка БД не прошла')
         raise HTTPException(503, 'SQLite недоступна; смотри Logs в Render')
@@ -98,11 +99,12 @@ def system_status(user: dict = Depends(signed_user)):
 
 # --------------------------------------------------------------------- API
 app.include_router(buildhouse.router)   # дом, доход, бонус, ник, аватар
+app.include_router(fishing.router)      # рыбалка, снасти, инвентарь и кейсы
 app.include_router(admin.router)        # админ-панель
 
 # --------------------------------------------------------------------- интерфейс
 # Отдаём только перечисленные файлы — исходники сервера (main.py и т.д.) не выставляются наружу
-STATIC = {'style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js': 'application/javascript'}
+STATIC = {'style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js': 'application/javascript', 'fishing_ui.js': 'application/javascript'}
 # no-cache = «всегда сверяйся с сервером»; благодаря ETag неизменный файл отдаётся как 304 без тела
 NO_CACHE = {'Cache-Control': 'no-cache'}
 

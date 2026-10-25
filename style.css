@@ -188,3 +188,88 @@ body.adm .topbar{border:1px solid #2d2d33;background:#171719;border-radius:16px;
 @keyframes maintblink{50%{opacity:.25}}
 .maint-shell small{display:block;font-size:12px;line-height:1.6;color:#98989b}
 body.maintenance-mode{overflow:hidden}
+
+/* ============================== VIVA FISHING v3 ================================== */
+.f-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:13px 1px 17px}
+.f-heading h1{margin:4px 0 8px;font-size:28px;letter-spacing:-.045em;font-weight:950;line-height:1.05}
+.f-heading h1 span{color:var(--y)}
+.f-heading p{margin:0;color:#94afbd;line-height:1.5;font-size:12px}
+.f-overline{font-size:10px;letter-spacing:.19em;color:#8ca9b5;font-weight:850}
+.f-live-pill{align-self:flex-start;white-space:nowrap;font-size:10px;letter-spacing:.09em;font-weight:900;border-radius:99px;background:#123524;color:#80e6a5;border:1px solid #235a3d;padding:6px 9px}
+.f-quickstats,.f-bag-counters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:0 0 20px}
+.f-quickstats>div,.f-bag-counters>div{background:linear-gradient(150deg,#132d39,#0b1e28);border:1px solid #245068;padding:12px 11px;border-radius:12px;overflow:hidden}
+.f-quickstats small,.f-bag-counters small{display:block;font-size:9px;letter-spacing:.06em;color:#8ca9b5;text-transform:uppercase}
+.f-quickstats b,.f-bag-counters b{display:block;margin-top:4px;font-weight:900;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-section-title{display:flex;justify-content:space-between;align-items:center;gap:9px;margin:10px 0}
+.f-section-title h2{margin:0;color:#e6f4ff;letter-spacing:0;text-transform:none;font-size:15px}
+.f-section-title>span{color:#88a6b4;font-size:11px}
+.f-locations{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0 15px}
+.f-location{display:flex;align-items:center;gap:8px;text-align:left;background:#102b3a;color:#d8eef7;border:1px solid #23516b;min-width:0;padding:12px 10px;border-radius:13px;font-weight:650}
+.f-location.active{background:linear-gradient(110deg,#15445b,#173b4b);border-color:#ffb347;box-shadow:0 0 0 1px #ffb34755}
+.f-location-icon{font-size:24px;flex:none}
+.f-location>b{font-size:14px}.f-location span:nth-child(2){min-width:0;flex:1}
+.f-location span:nth-child(2) b{font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f-location span:nth-child(2) small{font-size:10px;color:#90aab7;display:block;margin-top:3px}
+.f-loc-check{font-size:16px;color:var(--y);margin-left:auto}
+.f-location:last-child{grid-column:1/-1}
+.f-scene{height:230px;border:1px solid #29627c;border-radius:18px;position:relative;overflow:hidden;background:linear-gradient(180deg,#153647 0%,#3a849e 58%,#2b7586 59%,#0d3045 100%);margin-bottom:12px}
+.f-scene.loc-pond{background:linear-gradient(180deg,#173846,#4d8e95 58%,#276776 59%,#113343 100%)}
+.f-scene.loc-lake{background:linear-gradient(180deg,#112f57,#3f7fa5 58%,#1e6b9a 59%,#082741 100%)}
+.f-scene.loc-sea{background:linear-gradient(180deg,#5b3947,#d17d60 57%,#2f95bb 58%,#093850 100%)}
+.f-scene.loc-ocean{background:linear-gradient(180deg,#09152f,#284d90 58%,#235a9e 59%,#051936 100%)}
+.f-scene.loc-stream{background:linear-gradient(180deg,#251c4a,#685399 58%,#427c9f 59%,#1a184d 100%)}
+.f-scene-sun{position:absolute;top:25px;right:29px;width:48px;height:48px;border-radius:50%;background:#ffd999;box-shadow:0 0 50px #f8c06c88}
+.f-scene.loc-stream .f-scene-sun{background:#dec7ff;box-shadow:0 0 50px #b887feaa}
+.f-hill{position:absolute;bottom:83px;width:65%;height:80px;border-radius:80% 80% 0 0;background:#143d52cc;transform:rotate(-6deg)}
+.f-hill.one{left:-15%;bottom:88px}
+.f-hill.two{right:-28%;bottom:82px;background:#19526b99;transform:rotate(10deg)}
+.f-water{position:absolute;bottom:0;left:0;right:0;height:101px;background:linear-gradient(180deg,#2a839f88,#092a4bc9)}
+.f-water span{position:absolute;height:2px;background:#b0e8e088;border-radius:99px;left:8%;width:40%;top:24%;animation:fishWave 5s ease-in-out infinite}
+.f-water span:nth-child(2){top:52%;left:50%;width:30%;animation-delay:1.7s}.f-water span:nth-child(3){top:74%;left:20%;width:22%;animation-delay:3s}
+@keyframes fishWave{50%{transform:translateX(16px) scaleX(.7);opacity:.4}}
+.f-boat{position:absolute;bottom:66px;right:20%;font-size:46px;z-index:2;filter:drop-shadow(0 6px 7px #04172499)}
+.f-scene-label{position:absolute;left:16px;top:17px;display:flex;flex-direction:column;gap:4px;z-index:2;text-shadow:0 2px 6px #000c}
+.f-scene-label b{font-size:20px}.f-scene-label small{font-size:11px;color:#e7f5f8}
+.f-cast-panel{padding:17px 15px}
+.f-cast-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.f-cast-heading h2{font-size:14px;color:#f2f8fb;letter-spacing:0;text-transform:none;margin:5px 0 6px;line-height:1.4}
+.f-tackle-icon{font-size:30px}.f-equipped{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px}
+.f-equipped span{border:1px solid #275069;background:#132f40;border-radius:8px;padding:7px 9px;font-size:11px}
+.f-cast-btn{background:linear-gradient(130deg,#ffca6a,#ffae32);border-color:#ffd18a;border-radius:12px;padding:16px;font-size:15px}
+.f-cast-help{margin:9px 0 0;line-height:1.6}
+.f-catch-result{display:flex;align-items:center;gap:16px;animation:pop .3s ease-out}
+.f-catch-art{width:93px;height:93px;display:grid;place-items:center;border-radius:18px;border:1px solid #36687a;background:#0e2b3b;font-size:49px;flex:none}
+.f-catch-result h3{font-size:19px;margin:5px 0}.f-catch-result .m{margin:7px 0 0}
+.f-extra{background:#1f2635;border:1px solid #334057;border-radius:8px;padding:7px;font-size:11px;margin-top:10px}
+.f-species{display:grid;gap:7px}.f-species-item{display:grid;grid-template-columns:32px 1fr auto;gap:8px;align-items:center;padding:10px;border-radius:10px;background:#09202d;border:1px solid #1c3e50;min-width:0}
+.f-species-item>span:first-child{font-size:24px}.f-species-item b{font-size:12px}.f-species-item:not(.found){opacity:.7}
+.f-rarity{display:inline-flex;align-items:center;width:max-content;border-radius:6px;padding:3px 6px;font-size:10px;border:1px solid transparent;font-weight:800}
+.f-rarity.r-common{color:#ccd2d7;background:#5c646322;border-color:#69787855}
+.f-rarity.r-rare{color:#5fd4ff;background:#0078b820;border-color:#2197dc88}
+.f-rarity.r-epic{color:#d6a3ff;background:#6624a52f;border-color:#a866ed7c}
+.f-rarity.r-marine{color:#73eadd;background:#18776d44;border-color:#3ed1c3aa}
+.f-rarity.r-secret{color:#ff8886;background:#7d1b2b4f;border-color:#e33a588b}
+.f-rarity.r-exclusive{color:#fff0b1;background:linear-gradient(120deg,#ac70154d,#ffcc0044);border-color:#ffcc00;box-shadow:inset 0 0 8px #ffe88933}
+.rborder-exclusive{border-color:#cba03d!important;background:linear-gradient(120deg,#3b2c18,#132b37)!important;box-shadow:0 0 16px #efc14d22}
+.f-equipped-panels{display:grid;grid-template-columns:1fr 1fr;gap:9px}.f-equipped-panels>.panel{margin:0 0 10px;min-width:0;text-align:center}
+.f-equipped-panels small{display:block;color:#94b6c4;letter-spacing:.13em;font-size:10px}.f-equipped-panels b{display:block;font-size:12px;margin:0 0 7px;min-height:35px}
+.f-equipped-panels .f-rarity{margin:auto}.f-equipped-big{font-size:53px;margin:13px 0 8px}
+.f-gear-grid{display:grid;gap:8px}.f-gear-tile{display:flex;align-items:center;gap:10px;background:#0e2836;border:1px solid #285067;border-radius:12px;padding:10px 11px;min-width:0}
+.f-gear-icon{font-size:28px}.f-gear-info{flex:1;min-width:0}.f-gear-info>b{display:block;font-size:12px;margin-bottom:4px}.f-gear-info .m{margin:3px 0 0}.f-gear-tile.locked{opacity:.68}
+.f-lock{color:#9fb3bf}
+.f-case-grid{display:grid;gap:11px;margin-top:10px}
+.f-case-card{display:grid;grid-template-columns:50px 1fr auto;align-items:center;gap:10px;background:linear-gradient(130deg,#102d3d,#0d1d2b);border:1px solid #2a5368;padding:14px 10px;border-radius:14px}
+.f-case-icon{font-size:34px;text-align:center}.f-case-info{min-width:0}.f-case-info>b{font-size:13px}.f-case-info p{font-size:11px;color:#99b5c1;margin:3px 0}.f-case-info small{font-size:10px;color:#ccd8dd}.f-case-info strong{color:var(--y)}
+.f-case-card>details{grid-column:1/-1;border-top:1px solid #275063;padding-top:8px}.f-case-odds{display:grid;gap:6px;margin-top:8px}.f-case-odds>div{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:11px;padding:7px;background:#09212f;border-radius:8px}.f-case-odds b{margin-left:auto;color:var(--y)}
+.f-case-card.case-secret{border-color:#b9863c;background:linear-gradient(120deg,#2e251a,#102330)}
+.f-bag-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:14px 0}
+.f-bag-switch button{background:#132a36;border-color:#2c5365;color:#abc8d8;padding:11px 5px;font-size:10px;white-space:nowrap;min-width:0}
+.f-bag-switch button.on{background:#ffb347;color:#151b1e;border-color:#ffb347}.f-bag-switch small{display:inline-block;margin-left:3px}
+.f-bag-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#113040;border:1px solid #31556c;border-radius:12px;padding:12px;margin-bottom:10px;font-size:12px}
+.f-item{display:flex;align-items:center;gap:10px;border:1px solid #2a5268;border-radius:12px;padding:11px;margin:7px 0;background:#0b2634}
+.f-item-icon{width:48px;height:48px;display:grid;place-items:center;background:#163849;border-radius:10px;font-size:27px;flex:none}
+.f-item-body{flex:1;min-width:0}.f-item-body>b{font-size:12px;display:block;margin-bottom:5px}.f-item-body>small{font-size:10px;display:block;margin-top:5px;color:#8babbc}
+.f-item-side{display:flex;flex-direction:column;gap:6px;align-items:flex-end}.f-item-side strong{font-size:12px}
+.f-empty{padding:45px 15px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;background:#0e2838;border:1px dashed #31617a;border-radius:14px;color:#8aafbf;font-size:36px}.f-empty b{font-size:14px;color:#e4eef2}.f-empty p{font-size:12px;margin:0}
+.f-rarity-guide .f-rarities{display:flex;flex-wrap:wrap;gap:7px}
+.fishing-loading{text-align:center;padding:34px 20px}
+@media(max-width:380px){.f-heading h1{font-size:25px}.f-quickstats>div,.f-bag-counters>div{padding:10px 7px}.f-quickstats b,.f-bag-counters b{font-size:13px}.f-location{padding:10px 7px}.f-location-icon{font-size:21px}.f-gear-tile{gap:7px;padding:8px}.f-case-card{grid-template-columns:32px 1fr auto}.f-case-icon{font-size:27px}}
