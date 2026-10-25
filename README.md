@@ -1,18 +1,32 @@
-# Viva — рыбацкий клуб (Telegram Mini App)
+# Viva — исправленный запуск на Render
 
-Сервер: FastAPI + aiogram + SQLite. Страницу и API отдаёт один сервис на Render.
+Этот архив сделан из `viva.zip`. Изменение: страница и API работают **на одном и том же Render-адресе**, без отдельного GitHub Pages или ручного указания адреса в JavaScript.
 
-## Что есть
-* Экран загрузки Viva с анимацией; при проблемах на нём же выводится диагностика (какой шаг сломался).
-* Главный экран: «Технические работы». Меню снизу: Рыбалка, Снасти, Рюкзак, Настройки (+ «Админ» для администратора).
-* Верхняя панель: слева аватар с уровнем, справа баланс в рублях.
-* Настройки: аватар и ник. Админ-панель: игроки, рассылка, журнал, проверка БД.
+## Что изменено
+- `index.html`: убран старый URL `https://telegram-miniapp-1-4egc.onrender.com` из `api-base`. Теперь запросы отправляются на сервер, который открыл страницу.
+- `config.py`: на Render кнопка бота автоматически открывает `RENDER_EXTERNAL_URL`. Даже если старый `WEBAPP_URL` ещё указывает на GitHub Pages, он больше не используется на Render.
+- `config.py`: `ADMIN_ID` без настройки теперь 0, чтобы случайный человек не получил админ-права. Укажи собственный Telegram ID.
+- `.python-version`: Python 3.12.11 для предсказуемой сборки.
+- `index.html`: версия загрузчика увеличена, чтобы не использовать старый кэш.
 
-## Render
-* Build: `pip install -r requirements.txt`
-* Start: `uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1`
-* Environment: `BOT_TOKEN` (токен ТОГО бота, из которого открываешь приложение), `WEBAPP_URL` (адрес сервиса на Render, https://…), `ADMIN_ID`, по желанию `DB_PATH`, `PYTHON_VERSION=3.12.8`.
-* Проверка: `https://<сервис>.onrender.com/health` → `{"status":"ok",...}`.
+## Установка в существующий Render
+1. **На GitHub** открой репозиторий, связанный с ТВОИМ Web Service на Render. Загрузи все файлы из архива **в корень репозитория**, не в отдельную папку. Если старые файлы совпадают по именам, замени их.
+2. **На Render → Settings**: Root Directory оставить пустым, если файлы в корне.
+3. **Build Command**: `pip install -r requirements.txt`
+4. **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1`
+5. **Environment**: `BOT_TOKEN` = новый действующий токен от BotFather, `ADMIN_ID` = твой числовой Telegram ID. `WEBAPP_URL` можно удалить, так как Render сам даёт `RENDER_EXTERNAL_URL`. Если есть `PYTHON_VERSION`, поставь `3.12.11`, иначе `.python-version` сделает это сам. Для первого запуска `DB_PATH` не требуется.
+6. **Deploys → Manual Deploy → Deploy latest commit**. Дождись статуса **Live**.
+7. Открой `https://ТВОЙ-СЕРВИС.onrender.com/health` — там должен быть `"status":"ok"`. Затем `https://ТВОЙ-СЕРВИС.onrender.com/health/db` — `"database":"connected", "tables_ready":true`.
+8. Открой `https://ТВОЙ-СЕРВИС.onrender.com/` в браузере: страница должна открыться, хотя профиль **без Telegram не загрузится** — это нормально.
+9. В Telegram открой **именно своего бота** → `/start` → новую кнопку **🚀 Открыть**. Не используй старую кнопку из старого сообщения, если она ведёт на GitHub Pages.
 
-## Файлы
-main.py · config.py · db.py · auth.py · botapp.py · buildhouse.py (профиль/ник/аватар) · admin.py · catalog.py · index.html (загрузчик) · app.js · admin.js · style.css
+## Если снова проблема
+- `/health` недоступен → сервер/деплой не запущен.
+- `/health` работает, `/health/db` не работает → проблема с SQLite/диском.
+- Оба работают, профиль `401` → Telegram `initData`/токен бота не совпадают.
+- `TelegramConflictError` → другой экземпляр бота работает на ПК/другом Render; оставь один сервис.
+- `ModuleNotFoundError` → проверь Build Command и расположение `requirements.txt`.
+
+**Важно:** на Render Free SQLite хранится во временной файловой системе. Данные могут исчезнуть после засыпания, перезапуска или нового деплоя. Для постоянной игры потребуется внешняя БД либо сервер с постоянным диском. Это исправление рассчитано на рабочий запуск и проверку функций, а не на сохранность игровых данных 24/7.
+
+Никогда не публикуй BOT_TOKEN в репозитории или переписке. Ранее раскрытый токен нужно отозвать через BotFather и заменить в Render.
