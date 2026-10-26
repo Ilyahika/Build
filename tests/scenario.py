@@ -76,7 +76,7 @@ b=ok('POST','/api/fishing/cast',{'location':'pond'})['battle'];b=drive(b,False);
 s=state();after={g['key']:g['amount'] for g in s['gear']}
 for key in ['line_common','starter_lure']:assert after[key]==amounts[key]-1
 ok('POST','/api/fishing/tick',dict(id=b['id'],sequence=10000,position=.5));assert state()['gear']==s['gear']
-assert req('POST','/api/fishing/cast',{'location':'pond'}).status_code==429
+assert state()['progress']['cooldown_seconds']==0
 # Deterministic case pools exercise the same weighted selection as production.
 key='v5_rod_absolute_1'
 ok('POST','/api/admin/cases/shore',{'price':100,'enabled':True,'weights':{key:1}})

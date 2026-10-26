@@ -9,16 +9,18 @@ router=APIRouter(prefix='/api/community')
 
 def attempt_state(db,uid):
     now=int(time.time());r=db.execute('SELECT * FROM fishing_attempts WHERE telegram_id=?',(uid,)).fetchone()
-    active=bool(r and now<r['window_start']+3600)
-    return dict(limit=5,remaining=max(0,5-r['used']) if active else 5,resets_at=r['window_start']+3600 if active else 0,period_seconds=3600)
+    restored=max(0,(now-r['window_start'])//60) if r else 0
+    missing=max(0,min(5,r['used'])-restored) if r else 0
+    next_at=r['window_start']+(restored+1)*60 if missing else 0
+    return dict(limit=5,remaining=5-missing,next_at=next_at,resets_at=next_at,period_seconds=60)
 
 def spend_attempt(db,uid):
     now=int(time.time());state=attempt_state(db,uid)
-    if state['remaining']<=0:raise HTTPException(429,'Все 5 попыток использованы. Новый запас выдаётся через час от первого заброса.')
-    r=db.execute('SELECT * FROM fishing_attempts WHERE telegram_id=?',(uid,)).fetchone()
-    if not r or now>=r['window_start']+3600:
-        db.execute('INSERT INTO fishing_attempts VALUES (?,?,1) ON CONFLICT(telegram_id) DO UPDATE SET window_start=excluded.window_start,used=1',(uid,now))
-    else:db.execute('UPDATE fishing_attempts SET used=used+1 WHERE telegram_id=?',(uid,))
+    if state['remaining']<=0:raise HTTPException(429,'Нет попыток. Одна попытка восстанавливается каждую минуту.')
+    # Preserve partial-minute progress while the bank is below capacity.
+    anchor=now if state['remaining']==5 else state['next_at']-60
+    used=6-state['remaining']
+    db.execute('INSERT INTO fishing_attempts VALUES (?,?,?) ON CONFLICT(telegram_id) DO UPDATE SET window_start=excluded.window_start,used=excluded.used',(uid,anchor,used))
 
 def reward_state(db,uid):
     r=db.execute('SELECT * FROM fishing_reward_claims WHERE telegram_id=?',(uid,)).fetchone();now=int(time.time())

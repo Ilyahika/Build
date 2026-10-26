@@ -24,7 +24,7 @@ from db import session
 
 router = APIRouter(prefix='/api/fishing', tags=['fishing'])
 RNG = random.SystemRandom()
-COOLDOWN_SECONDS = 60
+COOLDOWN_SECONDS = 0
 
 RARITIES = dict(common='🖤 Обычный', rare='💙 Редкий', improved='🩵 Улучшенный', epic='💜 Эпический', legendary='💛 Легендарный', mythic='❤️ Мифический', absolute='🤍 Абсолютный')
 TIERS = list(RARITIES)
