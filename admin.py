@@ -1,369 +1,61 @@
-"""
-admin.py — API админ-панели. Все маршруты доступны только ADMIN_ID (зависимость admin_user).
-
-Возможности: сводка и диагностика, список игроков (поиск, фильтры, сортировка, страницы),
-карточка игрока, управление балансом/домом/гаражом/блокировкой, личные сообщения,
-рассылка всем игрокам, журнал действий администратора.
-"""
-import asyncio
-import logging
-import os
-import platform
-import random
-import shutil
-import sqlite3
+"""Fishing administration. All mutations are authorized and audited."""
 import time
-
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-
-import botapp
 from auth import admin_user
-from buildhouse import HOUSE_NAMES, MAX_ENERGY, MAX_LEVEL
-from catalog import CARS, car_info
-from config import ADMIN_ID, BOT_TOKEN, DB_PATH, STARTED, VERSION, WEBAPP_URL
-from system_state import maintenance_state, set_maintenance, DEFAULT_MESSAGE
 from db import session
-
-log = logging.getLogger('miniapp.admin')
-router = APIRouter(prefix='/api/admin')
-
-
-def audit(db, admin_id: int, target, action: str, value: str = '') -> None:
-    """Записывает действие администратора в журнал (admin_log)."""
-    db.execute('INSERT INTO admin_log (ts, admin_id, target, action, value) VALUES (?,?,?,?,?)',
-               (int(time.time()), admin_id, target, action, value[:200]))
-
-
-# =============================================================================== СВОДКА
+from config import DB_PATH, STARTED
+from system_state import maintenance_state,set_maintenance
+from fishing import ensure_fishing,snapshot,GEAR_BY_ID,FISH_BY_ID,FINDS_BY_ID,CASE_BY_ID
+router=APIRouter(prefix='/api/admin')
 @router.get('/stats')
-def stats(deep: bool = False, admin: dict = Depends(admin_user)):
-    """
-    Сводка: счётчики, проверки системы, информация о сервере.
-    deep=true запускает полную проверку целостности БД (PRAGMA quick_check) — это долго на большой базе,
-    поэтому по умолчанию она не выполняется.
-    """
-    now = int(time.time())
-    with session(write=True) as db:   # write нужен для проверки записи; транзакция короткая
-        # --- тест записи/чтения/удаления: измеряем задержку базы
-        t0 = time.perf_counter()
-        db.execute("INSERT OR REPLACE INTO db_probe VALUES ('p','ok')")
-        probe_ok = db.execute("SELECT value FROM db_probe WHERE id='p'").fetchone()[0] == 'ok'
-        db.execute("DELETE FROM db_probe WHERE id='p'")
-        ms = round((time.perf_counter() - t0) * 1000, 1)
-
-        # --- все счётчики за 3 запроса (админ с бесконечным балансом в суммы не входит)
-        pl = db.execute('''SELECT COUNT(*) AS players,
-                                  COALESCE(SUM(CASE WHEN telegram_id != ? THEN coins END), 0) AS coins_total,
-                                  COALESCE(SUM(games_played), 0) AS games_played, COALESCE(SUM(games_won), 0) AS games_won,
-                                  COALESCE(SUM(created_at > ?), 0) AS new_24h FROM players''', (ADMIN_ID, now - 86400)).fetchone()
-        bh = db.execute('''SELECT COALESCE(SUM(blocked = 1), 0) AS blocked, COALESCE(SUM(telegram_id != ? AND last_seen > ?), 0) AS online_now,
-                                  COALESCE(SUM(last_seen > ?), 0) AS online_15m,
-                                  COALESCE(SUM(last_seen > ?), 0) AS active_24h,
-                                  COALESCE(SUM(CASE WHEN telegram_id != ? THEN gems END), 0) AS gems_total,
-                                  COALESCE(SUM(taps), 0) AS taps FROM bh''', (ADMIN_ID, now - 75, now - 900, now - 86400, ADMIN_ID)).fetchone()
-        levels = {str(r[0]): r[1] for r in db.execute('SELECT house, COUNT(*) FROM bh GROUP BY house ORDER BY house')}
-        rows = {t: db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
-                for t in ('players', 'bh', 'cars', 'mines2', 'admin_log')}   # имена таблиц — из белого списка
-        fishing_stats = {
-            'fishing_catches': db.execute('SELECT COALESCE(SUM(catches),0) FROM fishing_progress').fetchone()[0],
-            'fish_in_bags': db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_fish').fetchone()[0],
-            'finds_in_bags': db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_finds').fetchone()[0],
-            'cases_opened': db.execute('SELECT COALESCE(SUM(opened),0) FROM fishing_cases').fetchone()[0],
-        }
-        integrity = db.execute('PRAGMA quick_check').fetchone()[0] if deep else None
-    st = {**dict(pl), **dict(bh), 'cars': rows['cars'], 'levels': levels, **fishing_stats}
-
-    size_kb = round((os.path.getsize(DB_PATH) if DB_PATH.exists() else 0) / 1024, 1)
-    free_mb = shutil.disk_usage(str(DB_PATH.parent)).free // 2 ** 20
-    up = int(now - STARTED)
-    bot = botapp.state
-
-    def check(name, status, detail):
-        return {'n': name, 's': status, 'd': detail}
-
-    checks = [
-        check('Авторизация Telegram', 'ok', 'initData подтверждена, ты — админ'),
-        check('BOT_TOKEN', 'ok' if BOT_TOKEN else 'fail', ('id бота ' + BOT_TOKEN.split(':')[0]) if BOT_TOKEN else 'не задан'),
-        check('Бот (getMe)', 'ok' if bot.username else 'fail', '@' + bot.username if bot.username else (bot.error or 'ещё не ответил')),
-        check('Polling бота', 'ok' if bot.polling else 'warn', 'работает' if bot.polling else (bot.error or 'не запущен')),
-        check('WEBAPP_URL', 'ok' if WEBAPP_URL.startswith('https://') else 'fail', WEBAPP_URL or 'не задан'),
-        check('SQLite запись/чтение', 'ok' if probe_ok else 'fail', f'{ms} мс'),
-        check('Технические работы', 'warn' if maintenance_state()['enabled'] else 'ok',
-              'включены' if maintenance_state()['enabled'] else 'игра открыта'),
-        check('Целостность БД', ('ok' if integrity == 'ok' else 'fail') if deep else 'skip',
-              integrity if deep else 'не запускалась — нажми «Глубокая проверка»'),
-        check('Файл БД', 'ok' if DB_PATH.exists() else 'fail', f'{size_kb} КБ'),
-        check('Свободно на диске', 'ok' if free_mb > 200 else 'warn', f'{free_mb} МБ'),
-        check('Время работы', 'ok' if up > 120 else 'warn',
-              f'{up // 3600} ч {up // 60 % 60} мин' + (' (недавний рестарт: на Render Free база могла сброситься)' if up < 120 else '')),
-    ]
-    info = {'Python': platform.python_version(), 'SQLite': sqlite3.sqlite_version, 'Версия': VERSION,
-            'Сервер (UTC)': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()), 'Путь БД': str(DB_PATH), 'ADMIN_ID': ADMIN_ID}
-    catalog = [{'idx': i, 'name': n, 'value': v} for i, (n, v) in enumerate(CARS)]   # для выбора машины в подарок
-    return {'stats': st, 'checks': checks, 'info': info, 'rows': rows, 'db_ms': ms, 'catalog': catalog,
-            'house_names': HOUSE_NAMES, 'maintenance': maintenance_state()}
-
-
-# =============================================================================== ИГРОКИ
-# Сортировки только из белого списка — в SQL подставляются готовые строки, не пользовательский ввод
-SORTS = {'last_seen': 'b.last_seen', 'coins': 'p.coins', 'gems': 'b.gems', 'house': 'b.house',
-         'created_at': 'p.created_at', 'earned': 'b.earned'}
-
-
-def _like(q: str) -> str:
-    """Экранирует служебные символы LIKE (% _ \\), чтобы поиск был буквальным."""
-    return '%' + q.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
-
-
+def stats(admin=Depends(admin_user)):
+    with session() as db:
+        counts={t:db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in ['players','fishing_sessions']}
+        return dict(**counts,catches=db.execute('SELECT COALESCE(SUM(catches),0) FROM fishing_progress').fetchone()[0],online=db.execute('SELECT COUNT(*) FROM bh WHERE last_seen>?',(time.time()-90,)).fetchone()[0],uptime=int(time.time()-STARTED),database=str(DB_PATH),integrity=db.execute('PRAGMA quick_check').fetchone()[0],maintenance=maintenance_state())
 @router.get('/players')
-def players(q: str = '', flt: str = 'all', sort: str = 'last_seen', offset: int = 0, limit: int = 25,
-            admin: dict = Depends(admin_user)):
-    """Список игроков: поиск по ID/имени/нику, фильтр all|online|blocked|new, сортировка, постраничный вывод."""
-    now, q = int(time.time()), q.strip()
-    limit, offset = min(max(limit, 1), 100), max(offset, 0)
-    where, args = ['1=1'], []
-    if flt == 'online':
-        where.append('b.last_seen > ?'); args.append(now - 900)
-    elif flt == 'live':
-        where.append('b.last_seen > ?'); args.append(now - 75)
-    elif flt == 'blocked':
-        where.append('b.blocked = 1')
-    elif flt == 'new':
-        where.append('p.created_at > ?'); args.append(now - 86400)
-    if q:
-        where.append("(CAST(p.telegram_id AS TEXT) LIKE ? ESCAPE '\\' OR PYLOWER(p.telegram_name) LIKE ? ESCAPE '\\' "
-                     "OR PYLOWER(IFNULL(p.nickname,'')) LIKE ? ESCAPE '\\')")
-        args += [_like(q)] * 3
-    cond = ' AND '.join(where)
-    order = SORTS.get(sort, SORTS['last_seen'])
+def players(q:str='',page:int=0,admin=Depends(admin_user)):
     with session() as db:
-        total = db.execute(f'SELECT COUNT(*) FROM players p LEFT JOIN bh b ON b.telegram_id=p.telegram_id WHERE {cond}', args).fetchone()[0]
-        rows = db.execute(f'''SELECT p.telegram_id, p.telegram_name, p.nickname, p.coins, p.games_played, p.games_won, p.created_at,
-                                     b.gems, b.house, b.blocked, b.reason, b.last_seen, b.taps, b.earned, b.avatar
-                              FROM players p LEFT JOIN bh b ON b.telegram_id = p.telegram_id
-                              WHERE {cond} ORDER BY {order} DESC, p.telegram_id LIMIT ? OFFSET ?''', (*args, limit, offset)).fetchall()
-    return {'players': [dict(r) for r in rows], 'total': total, 'admin_id': ADMIN_ID}
-
-
-@router.get('/player')
-def player_card(id: int, admin: dict = Depends(admin_user)):
-    """Подробная карточка игрока: профиль, дом, энергия, гараж, текущая игра."""
-    with session() as db:
-        row = db.execute('''SELECT p.*, b.gems, b.house, b.blocked, b.reason, b.last_seen, b.last_claim, b.last_daily,
-                                   b.taps, b.earned, b.avatar, b.energy
-                            FROM players p LEFT JOIN bh b ON b.telegram_id = p.telegram_id
-                            WHERE p.telegram_id=?''', (id,)).fetchone()
-        if not row:
-            raise HTTPException(404, 'Игрок не найден')
-        cars = [{'id': c['id'], **(car_info(int(c['car'])) or {'name': '???', 'value': 0, 'bonus': 0}), 'parked': bool(c['parked'])}
-                for c in db.execute('SELECT id, car, parked FROM cars WHERE telegram_id=? ORDER BY parked DESC, id DESC LIMIT 30', (id,))]
-        game = db.execute('SELECT bet, mines, status FROM mines2 WHERE telegram_id=?', (id,)).fetchone()
-        cars_total = db.execute('SELECT COUNT(*) FROM cars WHERE telegram_id=?', (id,)).fetchone()[0]
-        fprog = db.execute('SELECT catches, casts FROM fishing_progress WHERE telegram_id=?', (id,)).fetchone()
-        fishes = db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_fish WHERE telegram_id=?', (id,)).fetchone()[0]
-        finds = db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_finds WHERE telegram_id=?', (id,)).fetchone()[0]
-    data = dict(row)
-    level = min(max(data.get('house') or 1, 1), MAX_LEVEL)
-    data.update(cars=cars, cars_total=cars_total, game=dict(game) if game else None, is_admin=id == ADMIN_ID,
-                house_name=HOUSE_NAMES[level - 1], fishing_catches=fprog['catches'] if fprog else 0,
-                fishing_casts=fprog['casts'] if fprog else 0, fishing_fish=fishes, fishing_finds=finds)
-    return data
-
-
-# =============================================================================== ДЕЙСТВИЯ
-class Act(BaseModel):
-    telegram_id: int
-    act: str
-    value: str = ''      # число (для денег/уровня), номер машины или причина блокировки
-
-
-# Какие действия принимают число (для остальных value — произвольный текст)
-NUMERIC = {'coins_add', 'coins_set', 'gems_add', 'gems_set', 'house_add', 'house_set', 'give_car'}
-# Действия, запрещённые на самом админе
-FORBIDDEN_ON_ADMIN = {'block', 'reset', 'clear_garage'}
-
-
-def _reset(db, t, n, raw, now):
-    """Полный сброс аккаунта игрока к начальному состоянию."""
-    db.execute('DELETE FROM cars WHERE telegram_id=?', (t,))
-    db.execute('DELETE FROM mines2 WHERE telegram_id=?', (t,))
-    for table in ('fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered'):
-        db.execute(f'DELETE FROM {table} WHERE telegram_id=?', (t,))
-    db.execute('UPDATE players SET coins=0, games_played=0, games_won=0, nickname=NULL WHERE telegram_id=?', (t,))
-    db.execute("UPDATE bh SET gems=0, house=1, earned=0, taps=0, last_claim=?, avatar='🏠', last_daily=0 WHERE telegram_id=?", (now, t))
-
-
-def _give_car(db, t, n, raw, now):
-    """Подарить машину: по номеру из каталога, а при пустом значении — случайную."""
-    idx = n if raw != '' and 0 <= n < len(CARS) else random.randrange(len(CARS))
-    db.execute('INSERT INTO cars (telegram_id, car, ts) VALUES (?,?,?)', (t, str(idx), now))
-
-
-# Таблица действий: имя -> функция(db, telegram_id, число, исходная_строка, время)
-ACTIONS = {
-    'coins_add': lambda db, t, n, raw, now: db.execute('UPDATE players SET coins=MAX(0,coins+?) WHERE telegram_id=?', (n, t)),
-    'coins_set': lambda db, t, n, raw, now: db.execute('UPDATE players SET coins=MAX(0,?) WHERE telegram_id=?', (n, t)),
-    'gems_add': lambda db, t, n, raw, now: db.execute('UPDATE bh SET gems=MAX(0,gems+?) WHERE telegram_id=?', (n, t)),
-    'gems_set': lambda db, t, n, raw, now: db.execute('UPDATE bh SET gems=MAX(0,?) WHERE telegram_id=?', (n, t)),
-    'house_add': lambda db, t, n, raw, now: db.execute('UPDATE bh SET house=MIN(?,MAX(1,house+?)), last_claim=? WHERE telegram_id=?', (MAX_LEVEL, n, now, t)),
-    'house_set': lambda db, t, n, raw, now: db.execute('UPDATE bh SET house=MIN(?,MAX(1,?)), last_claim=? WHERE telegram_id=?', (MAX_LEVEL, n, now, t)),
-    'give_car': _give_car,
-    'clear_garage': lambda db, t, n, raw, now: db.execute('DELETE FROM cars WHERE telegram_id=?', (t,)),
-    'block': lambda db, t, n, raw, now: db.execute('UPDATE bh SET blocked=1, reason=? WHERE telegram_id=?', (raw[:100] or None, t)),
-    'unblock': lambda db, t, n, raw, now: db.execute('UPDATE bh SET blocked=0, reason=NULL WHERE telegram_id=?', (t,)),
-    'refill_energy': lambda db, t, n, raw, now: db.execute('UPDATE bh SET energy=?, energy_ts=? WHERE telegram_id=?', (MAX_ENERGY, now, t)),
-    'daily_reset': lambda db, t, n, raw, now: db.execute('UPDATE bh SET last_daily=0 WHERE telegram_id=?', (t,)),
-    'end_game': lambda db, t, n, raw, now: db.execute('DELETE FROM mines2 WHERE telegram_id=?', (t,)),
-    'reset': _reset,
-}
-
-
-@router.post('/act')
-def act(data: Act, admin: dict = Depends(admin_user)):
-    """Выполняет действие над игроком (см. ACTIONS) и пишет его в журнал."""
-    if data.act not in ACTIONS:
-        raise HTTPException(400, 'Неизвестное действие')
-    n = 0
-    if data.act in NUMERIC and (data.value != '' or data.act != 'give_car'):
-        try:
-            n = int(float(data.value or 0))
-        except ValueError:
-            raise HTTPException(400, 'Число введено неверно')
-        if abs(n) > 10 ** 12:
-            raise HTTPException(400, 'Слишком большое число')
-    if data.telegram_id == ADMIN_ID and data.act in FORBIDDEN_ON_ADMIN:
-        raise HTTPException(400, 'Это действие нельзя применить к админу')
-    now = int(time.time())
+        return [dict(r) for r in db.execute('SELECT p.telegram_id,p.telegram_name,p.nickname,p.coins,b.blocked,b.last_seen,COALESCE(f.xp,0) xp FROM players p JOIN bh b USING(telegram_id) LEFT JOIN fishing_progress f USING(telegram_id) WHERE CAST(p.telegram_id AS TEXT) LIKE ? OR PYLOWER(p.telegram_name) LIKE ? OR PYLOWER(p.nickname) LIKE ? ORDER BY b.last_seen DESC LIMIT 30 OFFSET ?',('%'+q+'%','%'+q.lower()+'%','%'+q.lower()+'%',max(0,page)*30))]
+@router.get('/players/{uid}')
+def player(uid:int,admin=Depends(admin_user)):
     with session(write=True) as db:
-        if not db.execute('SELECT 1 FROM players WHERE telegram_id=?', (data.telegram_id,)).fetchone():
-            raise HTTPException(404, 'Игрок не найден')
-        db.execute('INSERT OR IGNORE INTO bh (telegram_id, last_claim, energy_ts) VALUES (?,?,?)', (data.telegram_id, now, now))
-        ACTIONS[data.act](db, data.telegram_id, n, data.value, now)
-        audit(db, admin['id'], data.telegram_id, data.act, data.value)
-    log.info('ADMIN %s -> %s %s', data.telegram_id, data.act, data.value)
-    return {'ok': True}
-
-
-# =============================================================================== СООБЩЕНИЯ
-class Msg(BaseModel):
-    telegram_id: int
-    text: str = Field(min_length=1, max_length=1000)
-
-
-@router.post('/message')
-async def message(data: Msg, admin: dict = Depends(admin_user)):
-    """Личное сообщение игроку от имени бота."""
-    bot = botapp.state.bot
-    if bot is None:
-        raise HTTPException(503, 'Бот не запущен')
-    try:
-        await bot.send_message(data.telegram_id, data.text)
-    except Exception as exc:
-        raise HTTPException(400, f'Не удалось отправить: {type(exc).__name__}')
-    await run_in_threadpool(_audit_once, admin['id'], data.telegram_id, 'message', data.text)
-    return {'ok': True}
-
-
-def _audit_once(admin_id, target, action, value=''):
+        if not db.execute('SELECT 1 FROM players WHERE telegram_id=?',(uid,)).fetchone():raise HTTPException(404,'Игрок не найден')
+        ensure_fishing(db,uid);return snapshot(db,uid)
+class Change(BaseModel):
+    kind:str
+    key:str=''
+    delta:int=Field(default=0,ge=-1000000000,le=1000000000)
+    reason:str=Field(default='',max_length=300)
+@router.post('/players/{uid}')
+def change(uid:int,data:Change,admin=Depends(admin_user)):
     with session(write=True) as db:
-        audit(db, admin_id, target, action, value)
-
-
-# Состояние текущей рассылки (одна за раз)
-BROADCAST = {'running': False, 'total': 0, 'sent': 0, 'failed': 0, 'task': None}
-
-
-async def _broadcast_worker(bot, ids, text):
-    """Фоновая рассылка. Пауза 50 мс между сообщениями — безопасно для лимитов Telegram (~30 сообщ./с)."""
-    from aiogram.exceptions import TelegramRetryAfter
-    try:
-        for uid in ids:
-            try:
-                await bot.send_message(uid, text)
-                BROADCAST['sent'] += 1
-            except TelegramRetryAfter as exc:        # Telegram просит подождать
-                await asyncio.sleep(exc.retry_after)
-                try:
-                    await bot.send_message(uid, text)
-                    BROADCAST['sent'] += 1
-                except Exception:
-                    BROADCAST['failed'] += 1
-            except Exception:                        # игрок заблокировал бота и т.п.
-                BROADCAST['failed'] += 1
-            await asyncio.sleep(0.05)
-    finally:
-        BROADCAST['running'] = False
-
-
-class Broadcast(BaseModel):
-    text: str = Field(min_length=1, max_length=1000)
-
-
-def _recipient_ids():
-    with session() as db:
-        return [r[0] for r in db.execute('SELECT p.telegram_id FROM players p JOIN bh b ON b.telegram_id=p.telegram_id WHERE b.blocked=0')]
-
-
-@router.post('/broadcast')
-async def broadcast(data: Broadcast, admin: dict = Depends(admin_user)):
-    """Запускает рассылку всем не заблокированным игрокам."""
-    bot = botapp.state.bot
-    if bot is None:
-        raise HTTPException(503, 'Бот не запущен')
-    if BROADCAST['running']:
-        raise HTTPException(409, 'Рассылка уже идёт')
-    ids = await run_in_threadpool(_recipient_ids)
-    BROADCAST.update(running=True, total=len(ids), sent=0, failed=0)
-    BROADCAST['task'] = asyncio.create_task(_broadcast_worker(bot, ids, data.text))   # ссылка в словаре — чтобы задачу не удалил сборщик мусора
-    await run_in_threadpool(_audit_once, admin['id'], None, 'broadcast', f'{len(ids)} чел.: {data.text}')
-    return {'ok': True, 'total': len(ids)}
-
-
-@router.get('/broadcast')
-def broadcast_status(admin: dict = Depends(admin_user)):
-    """Ход текущей/последней рассылки."""
-    return {k: BROADCAST[k] for k in ('running', 'total', 'sent', 'failed')}
-
-
-# =============================================================================== ЖУРНАЛ
+        if not db.execute('SELECT 1 FROM players WHERE telegram_id=?',(uid,)).fetchone():raise HTTPException(404,'Игрок не найден')
+        ensure_fishing(db,uid)
+        if data.kind in ['coins','xp']:
+            table='players' if data.kind=='coins' else 'fishing_progress'
+            db.execute(f'UPDATE {table} SET {data.kind}=MAX(0,{data.kind}+?) WHERE telegram_id=?',(data.delta,uid))
+        elif data.kind=='block':db.execute('UPDATE bh SET blocked=?,reason=? WHERE telegram_id=?',(int(data.delta>0),data.reason,uid))
+        elif data.kind=='cooldown':db.execute('UPDATE fishing_progress SET last_cast=0 WHERE telegram_id=?',(uid,))
+        elif data.kind in ['gear','fish','find','case']:
+            cat,table,col={'gear':(GEAR_BY_ID,'fishing_gear','gear_key'),'fish':(FISH_BY_ID,'fishing_fish','item_key'),'find':(FINDS_BY_ID,'fishing_finds','item_key'),'case':(CASE_BY_ID,'fishing_cases','case_key')}[data.kind]
+            if data.key not in cat:raise HTTPException(400,'Неизвестный предмет')
+            db.execute(f'INSERT INTO {table} (telegram_id,{col},amount) VALUES (?,?,?) ON CONFLICT(telegram_id,{col}) DO UPDATE SET amount=MAX(0,amount+?)',(uid,data.key,max(0,data.delta),data.delta))
+            if data.kind=='gear':
+                g=cat[data.key];slot='tackle' if g['type']=='bait' else g['type']
+                amount=db.execute(f'SELECT amount FROM {table} WHERE telegram_id=? AND {col}=?',(uid,data.key)).fetchone()[0]
+                if amount==0:
+                    fallback='starter_rod' if slot=='rod' else 'starter_lure' if slot=='tackle' else ''
+                    db.execute(f'UPDATE fishing_progress SET {slot}=? WHERE telegram_id=? AND {slot}=?',(fallback,uid,data.key))
+        else:raise HTTPException(400,'Неизвестное действие')
+        db.execute('INSERT INTO admin_log(ts,admin_id,target,action,value) VALUES (?,?,?,?,?)',(int(time.time()),admin['id'],uid,data.kind,f'{data.key}: {data.delta}; {data.reason}'))
+        return snapshot(db,uid)
 @router.get('/log')
-def admin_log(limit: int = 50, admin: dict = Depends(admin_user)):
-    """Последние действия администратора."""
-    with session() as db:
-        rows = db.execute('SELECT ts, admin_id, target, action, value FROM admin_log ORDER BY id DESC LIMIT ?',
-                          (min(max(limit, 1), 200),)).fetchall()
-    return {'log': [dict(r) for r in rows]}
-
-
-# ============================================================================= MAINTENANCE / ONLINE
-@router.get('/maintenance')
-def maintenance(admin: dict = Depends(admin_user)):
-    return maintenance_state()
-
-
-class MaintenanceChange(BaseModel):
-    enabled: bool
-    message: str = Field(default=DEFAULT_MESSAGE, max_length=500)
-
-
+def log(admin=Depends(admin_user)):
+    with session() as db:return [dict(r) for r in db.execute('SELECT * FROM admin_log ORDER BY id DESC LIMIT 100')]
+class Maintenance(BaseModel):
+    enabled:bool
+    message:str='Идёт обновление игры'
 @router.post('/maintenance')
-def maintenance_change(data: MaintenanceChange, admin: dict = Depends(admin_user)):
-    return set_maintenance(data.enabled, data.message, admin['id'])
-
-
-@router.get('/live')
-def live_players(admin: dict = Depends(admin_user)):
-    """Approximate current players: last signed heartbeat within 75 seconds."""
-    now = int(time.time())
-    with session() as db:
-        rows = db.execute('''SELECT p.telegram_id, p.telegram_name, p.nickname, p.coins,
-                            b.avatar, b.house, b.last_seen, b.blocked
-                            FROM players p JOIN bh b ON b.telegram_id = p.telegram_id
-                            WHERE b.last_seen >= ? AND p.telegram_id != ?
-                            ORDER BY b.last_seen DESC LIMIT 60''', (now - 75, ADMIN_ID)).fetchall()
-        active_games = db.execute("""SELECT COUNT(*) FROM mines2 m JOIN bh b ON m.telegram_id=b.telegram_id
-                                   WHERE m.status='playing' AND b.last_seen >= ?""", (now - 75,)).fetchone()[0]
-    return {'online': [dict(r) for r in rows], 'count': len(rows), 'active_mines': active_games,
-            'updated_at': now, 'definition': 'Активность за последние 75 секунд (опрос раз в 10 секунд)'}
+def maintenance(data:Maintenance,admin=Depends(admin_user)):
+    return set_maintenance(data.enabled,data.message,admin['id'])

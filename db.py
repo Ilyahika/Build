@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS fishing_cases (
     opened INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (telegram_id,case_key)
 );
+CREATE TABLE IF NOT EXISTS fishing_catch_history (id INTEGER PRIMARY KEY AUTOINCREMENT,telegram_id INTEGER NOT NULL,fish_key TEXT NOT NULL,kg REAL NOT NULL,ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS fishing_sessions (telegram_id INTEGER PRIMARY KEY,session_id TEXT NOT NULL,payload TEXT NOT NULL,expires REAL NOT NULL,finished INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS site_settings (
     id INTEGER PRIMARY KEY CHECK(id=1),
     enabled INTEGER NOT NULL DEFAULT 0,
@@ -131,6 +133,8 @@ MIGRATIONS = {
         'earned': 'INTEGER NOT NULL DEFAULT 0', "avatar": "TEXT NOT NULL DEFAULT '🏠'",
         'blocked': 'INTEGER NOT NULL DEFAULT 0', 'reason': 'TEXT', 'last_seen': 'INTEGER NOT NULL DEFAULT 0',
     },
+    'fishing_cases': {'amount':'INTEGER NOT NULL DEFAULT 0'},
+    'fishing_progress': {'xp':'INTEGER NOT NULL DEFAULT 0','reel':"TEXT NOT NULL DEFAULT ''",'line':"TEXT NOT NULL DEFAULT ''",'spoon':"TEXT NOT NULL DEFAULT ''",'spinner':"TEXT NOT NULL DEFAULT ''"},
     'cars': {'parked': 'INTEGER NOT NULL DEFAULT 0'},
 }
 
@@ -146,7 +150,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
     conn.row_factory = sqlite3.Row                  # доступ к колонкам по имени: row['coins']
     conn.execute('PRAGMA busy_timeout=15000')       # ждать освобождения блокировки до 15 с, а не падать сразу
-    conn.execute('PRAGMA synchronous=NORMAL')       # безопасно в режиме WAL и заметно быстрее записи
+    conn.execute('PRAGMA synchronous=FULL')       # безопасно в режиме WAL и заметно быстрее записи
     conn.create_function('PYLOWER', 1, _lower, deterministic=True)
     return conn
 

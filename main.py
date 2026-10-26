@@ -3,8 +3,8 @@ main.py — точка входа. Запуск:  uvicorn main:app --host 0.0.0.
 
 Что здесь происходит:
   1. при старте создаётся БД (мгновенно) и в ФОНЕ запускается Telegram-бот;
-  2. подключаются маршруты: игра (buildhouse, games) и админ-панель (admin);
-  3. отдаются файлы интерфейса: index.html, style.css, app.js, admin.js.
+  2. подключаются маршруты: рыбалка и админ-панель;
+  3. отдаются файлы интерфейса: index.html, style.css, app.js.
 Важно: --workers 1, иначе несколько копий бота будут конфликтовать при polling.
 """
 import asyncio
@@ -20,7 +20,6 @@ from fastapi.responses import FileResponse, Response
 
 import admin
 import botapp
-import buildhouse
 import fishing
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
 from db import init_db, session
@@ -42,7 +41,8 @@ async def lifespan(app: FastAPI):
     try:
         init_db()                                    # создаёт таблицы за миллисекунды
     except Exception:                                # сервер всё равно запускается: /health/db покажет проблему
-        log.exception('init_db не удалась: сайт запущен, но БД недоступна')
+        log.exception('База недоступна: запуск остановлен')
+        raise
     bot = botapp.create_bot()
     botapp.state.bot = bot
     task = asyncio.create_task(botapp.run_bot(bot)) if bot else None   # бот стартует параллельно, сайт уже отвечает
@@ -98,13 +98,12 @@ def system_status(user: dict = Depends(signed_user)):
     return {**state, 'is_admin': is_admin, 'heartbeat_seconds': 10}
 
 # --------------------------------------------------------------------- API
-app.include_router(buildhouse.router)   # дом, доход, бонус, ник, аватар
 app.include_router(fishing.router)      # рыбалка, снасти, инвентарь и кейсы
 app.include_router(admin.router)        # админ-панель
 
 # --------------------------------------------------------------------- интерфейс
 # Отдаём только перечисленные файлы — исходники сервера (main.py и т.д.) не выставляются наружу
-STATIC = {'style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js': 'application/javascript', 'fishing_ui.js': 'application/javascript'}
+STATIC = {'style.css': 'text/css', 'app.js': 'application/javascript'}
 # no-cache = «всегда сверяйся с сервером»; благодаря ETag неизменный файл отдаётся как 304 без тела
 NO_CACHE = {'Cache-Control': 'no-cache'}
 

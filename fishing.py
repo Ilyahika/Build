@@ -1,10 +1,13 @@
-"""Viva Fishing. Entirely virtual gameplay, with server-side inventory and free supply cases.
+"""Viva Fishing. Virtual fishing with server-side inventory and coin purchases.
 
-Cases never take coins, stars or payments: new openings are unlocked by caught fish.
+Coins are earned in game; no real money payments or withdrawals.
 All changes are inside SQLite IMMEDIATE transactions to prevent double-claiming.
 """
 from __future__ import annotations
 
+import json
+import uuid
+import math
 import random
 import time
 
@@ -17,12 +20,10 @@ from db import session
 
 router = APIRouter(prefix='/api/fishing', tags=['fishing'])
 RNG = random.SystemRandom()
-COOLDOWN_SECONDS = 4
+COOLDOWN_SECONDS = 180
 
-RARITIES = {
-    'common': 'Обычная', 'rare': 'Редкая', 'epic': 'Эпическая',
-    'marine': 'Морская', 'secret': 'Секретная', 'exclusive': 'Эксклюзив',
-}
+RARITIES = dict(common='🖤 Обычный', rare='💙 Редкий', improved='🩵 Улучшенный', epic='💜 Эпический', legendary='💛 Легендарный', mythic='❤️ Мифический', absolute='🤍 Абсолютный')
+TIERS = list(RARITIES)
 
 LOCATIONS = [
     {'key':'pond', 'name':'Пруд', 'icon':'🌿', 'subtitle':'Тихий берег', 'description':'Караси, окуни и золотой карп', 'color':'#6dba8a'},
@@ -75,7 +76,7 @@ GEAR = [
     {'key':'sea_rod', 'type':'rod', 'name':'Морской трезубец', 'rarity':'marine', 'icon':'🔱', 'luck':0.45},
     {'key':'shadow_rod', 'type':'rod', 'name':'Удочка тёмных вод', 'rarity':'secret', 'icon':'🎣', 'luck':0.7},
     {'key':'gold_rod', 'type':'rod', 'name':'Золотая удочка', 'rarity':'exclusive', 'icon':'✨', 'luck':1.0},
-    {'key':'starter_lure', 'type':'tackle', 'name':'Простой поплавок', 'rarity':'common', 'icon':'🪝', 'luck':0},
+    {'key':'starter_lure', 'type':'tackle', 'name':'Простая приманка', 'rarity':'common', 'icon':'🪝', 'luck':0},
     {'key':'silver_hook', 'type':'tackle', 'name':'Серебряный крючок', 'rarity':'rare', 'icon':'🪝', 'luck':0.12},
     {'key':'flash_spinner', 'type':'tackle', 'name':'Мерцающая блесна', 'rarity':'epic', 'icon':'✨', 'luck':0.25},
     {'key':'coral_float', 'type':'tackle', 'name':'Коралловый поплавок', 'rarity':'marine', 'icon':'🪸', 'luck':0.4},
@@ -83,17 +84,30 @@ GEAR = [
     {'key':'gold_hook', 'type':'tackle', 'name':'Золотой крючок', 'rarity':'exclusive', 'icon':'🏆', 'luck':0.9},
 ]
 
-# 4 FREE cases; no currency, wager, purchases, or cash-out. Earn openings by fishing.
-CASES = [
-    {'key':'shore', 'name':'Береговой кейс', 'icon':'📦', 'every':3, 'subtitle':'Каждые 3 улова',
-     'items':['river_rod','silver_hook','starter_rod','starter_lure'], 'weights':[25,35,20,20]},
-    {'key':'lake', 'name':'Озёрный кейс', 'icon':'🎁', 'every':8, 'subtitle':'Каждые 8 уловов',
-     'items':['carbon_rod','flash_spinner','river_rod','silver_hook'], 'weights':[20,20,30,30]},
-    {'key':'marine', 'name':'Морской кейс', 'icon':'🧰', 'every':18, 'subtitle':'Каждые 18 уловов',
-     'items':['sea_rod','coral_float','carbon_rod','flash_spinner'], 'weights':[25,25,25,25]},
-    {'key':'secret', 'name':'Тайный кейс', 'icon':'🗝️', 'every':35, 'subtitle':'Каждые 35 уловов',
-     'items':['gold_rod','gold_hook','shadow_rod','phantom_lure'], 'weights':[10,10,40,40]},
-]
+# Existing identifiers are retained so inventories survive the upgrade.
+for item in FISH + FINDS + GEAR:
+    item['rarity'] = {'marine':'legendary','secret':'mythic','exclusive':'absolute'}.get(item['rarity'],item['rarity'])
+for i, loc in enumerate(LOCATIONS): loc['level'] = [1,5,10,18,25][i]
+FISH_BY_SPECIAL = {'carp':'improved','crystal_carp':'absolute','leviathan':'absolute'}
+for fish in FISH: fish['rarity'] = FISH_BY_SPECIAL.get(fish['key'],fish['rarity'])
+rod_names = ['Простая удочка','Бамбуковая удочка','Улучшенная удочка','Простой спиннинг','Улучшенный спиннинг','Спортивный спиннинг']
+for i, item in enumerate(GEAR[:6]): item.update(name=rod_names[i],rarity=TIERS[i],price=[0,150,600,1800,5000,14000][i])
+for item in GEAR[6:]: item.update(type='bait',price=200*(TIERS.index(item['rarity'])+1)**2)
+GEAR.append(dict(key='bait_improved',type='bait',name='Силиконовая приманка',icon='🪝',rarity='improved',luck=.18,price=450))
+for typ, title, icon in [('reel','Катушка','⚙️'),('line','Леска','🧵'),('spoon','Колебалка','🥄'),('spinner','Вертушка','🌀')]:
+    for i, rarity in enumerate(TIERS):
+        GEAR.append(dict(key=f'{typ}_{rarity}',type=typ,name=f'{title} · {RARITIES[rarity][2:]}',icon=icon,rarity=rarity,luck=i*.08,price=100*(i+1)**3))
+CASES = []
+for i,(key,name,price) in enumerate([('shore','Береговой',300),('lake','Озёрный',1200),('marine','Морской',4500),('secret','Глубинный',12000)]):
+    pool=[g for g in GEAR if max(0,i-1)<=TIERS.index(g['rarity'])<=min(6,i+3)]
+    weights=[max(1,70//(1+TIERS.index(g['rarity']))**2) for g in pool]
+    CASES.append(dict(key=key,name=name+' кейс',icon='📦',price=price,items=[g['key'] for g in pool],weights=weights))
+
+def level_info(xp):
+    level=1; need=100; rest=xp
+    while rest>=need:
+        rest-=need; level+=1; need=100+50*(level-1)
+    return dict(level=level,xp=xp,level_xp=rest,next_xp=need)
 
 FISH_BY_ID = {r['key']: r for r in FISH}
 FINDS_BY_ID = {r['key']: r for r in FINDS}
@@ -104,7 +118,8 @@ CASE_BY_ID = {r['key']: r for r in CASES}
 
 def ensure_fishing(db, uid: int):
     """Create missing progress and free starter gear without touching existing balances."""
-    db.execute('INSERT OR IGNORE INTO fishing_progress (telegram_id) VALUES (?)', (uid,))
+    created=db.execute('INSERT OR IGNORE INTO fishing_progress (telegram_id) VALUES (?)', (uid,)).rowcount
+    if not created: return
     db.execute('INSERT OR IGNORE INTO fishing_gear (telegram_id, gear_key, amount) VALUES (?,?,1)', (uid, 'starter_rod'))
     db.execute('INSERT OR IGNORE INTO fishing_gear (telegram_id, gear_key, amount) VALUES (?,?,1)', (uid, 'starter_lure'))
 
@@ -122,12 +137,13 @@ def snapshot(db, uid: int) -> dict:
         'SELECT gear_key,amount FROM fishing_gear WHERE telegram_id=? AND amount>0', (uid,))
         if r['gear_key'] in GEAR_BY_ID]
     opened = {r['case_key']:r['opened'] for r in db.execute('SELECT case_key,opened FROM fishing_cases WHERE telegram_id=?', (uid,))}
-    cases = [{**c, 'available':max(0,caught//c['every']-opened.get(c['key'],0)),
-              'opened':opened.get(c['key'],0),
-              'rewards': [{**GEAR_BY_ID[key], 'chance':weight} for key,weight in zip(c['items'],c['weights'])]}
-             for c in CASES]
+    amounts={r['case_key']:r['amount'] for r in db.execute('SELECT case_key,amount FROM fishing_cases WHERE telegram_id=?',(uid,))}
+    cases = [{**c,'amount':amounts.get(c['key'],0),'opened':opened.get(c['key'],0),'rewards':[{**GEAR_BY_ID[k],'chance':round(w/sum(c['weights'])*100,2)} for k,w in zip(c['items'],c['weights'])]} for c in CASES]
+    player = dict(db.execute('SELECT p.*,b.avatar,b.blocked FROM players p JOIN bh b USING(telegram_id) WHERE telegram_id=?',(uid,)).fetchone())
+    active = db.execute('SELECT payload FROM fishing_sessions WHERE telegram_id=? AND finished=0 AND expires>?',(uid,time.time())).fetchone()
     return {
-        'progress': {'casts':p['casts'], 'catches':caught, 'last_cast':p['last_cast'],
+        'best_kg':db.execute('SELECT COALESCE(MAX(kg),0) FROM fishing_catch_history WHERE telegram_id=?',(uid,)).fetchone()[0], 'player':player, 'level':level_info(p['xp']), 'active':json.loads(active[0]) if active else None, 'server_time':time.time(),
+        'progress': {'xp':p['xp'], 'equipment':{k:p[k] for k in ['rod','tackle','reel','line','spoon','spinner']}, 'casts':p['casts'], 'catches':caught, 'last_cast':p['last_cast'],
                      'cooldown_seconds':COOLDOWN_SECONDS, 'rod':p['rod'], 'tackle':p['tackle']},
         'fish': inventory(db, 'fishing_fish', uid, FISH_BY_ID),
         'finds': inventory(db, 'fishing_finds', uid, FINDS_BY_ID),
@@ -140,16 +156,14 @@ def snapshot(db, uid: int) -> dict:
 def choose_fish(location: str, rod_key: str, tackle_key: str):
     choice = [fish for fish in FISH if fish['location'] == location]
     luck = GEAR_BY_ID[rod_key]['luck'] + GEAR_BY_ID[tackle_key]['luck']
-    tier_boost = {'common':1, 'rare':1+luck*.45, 'epic':1+luck*.85,
-                  'marine':1+luck*1.25,'secret':1+luck*1.75}
-    weights = [f['weight'] * tier_boost[f['rarity']] for f in choice]
+    weights = [f['weight'] * (1+luck*TIERS.index(f['rarity'])*.4) for f in choice]
     return RNG.choices(choice, weights=weights, k=1)[0]
 
 
 def choose_find(luck: float):
     if RNG.random() >= min(.26, .09 + luck*.035):
         return None
-    weights = {'common':58, 'rare':25, 'epic':10, 'marine':5, 'secret':1.7, 'exclusive':.3}
+    weights = dict(zip(TIERS,[58,25,18,10,5,1.7,.3]))
     # Better equipment modestly improves rare-find odds, without guaranteeing drops.
     choices = [f for f in FINDS]
     w = [weights[f['rarity']] * (1+luck if f['rarity'] in ('secret','exclusive') else 1) for f in choices]
@@ -175,26 +189,56 @@ class Cast(BaseModel):
 
 @router.post('/cast')
 def cast(data:Cast, user:dict=Depends(current_user)):
-    if data.location not in LOC_BY_ID:
-        raise HTTPException(400, 'Такой локации нет')
-    now = int(time.time())
+    if data.location not in LOC_BY_ID: raise HTTPException(400,'Нет локации')
+    now=time.time(); uid=user['id']
     with session(write=True) as db:
-        uid = user['id']
         ensure_fishing(db,uid)
-        row = db.execute('SELECT * FROM fishing_progress WHERE telegram_id=?', (uid,)).fetchone()
-        if uid != ADMIN_ID and now - row['last_cast'] < COOLDOWN_SECONDS:
-            raise HTTPException(429, f'Подожди {COOLDOWN_SECONDS - (now-row["last_cast"])} сек. до следующего заброса')
-        rod, tackle = row['rod'], row['tackle']
-        fish = choose_fish(data.location, rod, tackle)
-        luck = GEAR_BY_ID[rod]['luck']+GEAR_BY_ID[tackle]['luck']
-        found = choose_find(luck)
-        add_item(db,'fishing_fish',uid,fish['key'])
-        db.execute('INSERT OR IGNORE INTO fishing_discovered (telegram_id, fish_key) VALUES (?,?)', (uid,fish['key']))
-        if found:
-            add_item(db,'fishing_finds',uid,found['key'])
-        db.execute('UPDATE fishing_progress SET casts=casts+1, catches=catches+1, last_cast=? WHERE telegram_id=?', (now,uid))
-        return {'result': {'fish':fish,'find':found,'location':LOC_BY_ID[data.location]['name']},
-                'state':snapshot(db,uid)}
+        row=db.execute('SELECT * FROM fishing_progress WHERE telegram_id=?',(uid,)).fetchone()
+        if level_info(row['xp'])['level']<LOC_BY_ID[data.location]['level']: raise HTTPException(403,'Недостаточный уровень')
+        active=db.execute('SELECT payload FROM fishing_sessions WHERE telegram_id=? AND finished=0 AND expires>?',(uid,now)).fetchone()
+        if active: return {'battle':json.loads(active[0]),'state':snapshot(db,uid)}
+        if now-row['last_cast']<COOLDOWN_SECONDS: raise HTTPException(429,f"Следующий заброс через {math.ceil(COOLDOWN_SECONDS-(now-row['last_cast']))} сек.")
+        fish=choose_fish(data.location,row['rod'],row['tackle']); tier=TIERS.index(fish['rarity'])
+        kg=round(RNG.uniform(.3,2.5)*(1+tier*.9),2)
+        power=sum(GEAR_BY_ID.get(row[k],{}).get('luck',0) for k in ['rod','tackle','reel','line','spoon','spinner'])
+        difficulty=min(1,tier/7+kg/35)
+        battle=dict(id=uuid.uuid4().hex,fish=fish,kg=kg,duration=12+tier,started=now,expires=now+120,seed=RNG.random()*6.28,width=max(.12,.32-difficulty*.16+min(.09,power*.025)),speed=.7+difficulty*1.8,tier=tier)
+        db.execute('INSERT OR REPLACE INTO fishing_sessions VALUES (?,?,?,?,0)',(uid,battle['id'],json.dumps(battle),now+120))
+        db.execute('UPDATE fishing_progress SET casts=casts+1,last_cast=? WHERE telegram_id=?',(int(now),uid))
+        return {'battle':battle,'state':snapshot(db,uid)}
+
+class Tick(BaseModel):
+    id:str
+    position:float
+    sequence:int
+
+@router.post('/tick')
+def tick(data:Tick,user:dict=Depends(current_user)):
+    # Progress is integrated against server time, never accepted from the client.
+    uid=user['id'];now=time.time()
+    with session(write=True) as db:
+        r=db.execute('SELECT * FROM fishing_sessions WHERE telegram_id=? AND session_id=?',(uid,data.id)).fetchone()
+        if not r: raise HTTPException(404,'Заброс не найден')
+        b=json.loads(r['payload'])
+        if r['finished']: return {'done':True,'won':b.get('won',False),'score':b.get('score',0),'battle':b,'state':snapshot(db,uid)}
+        if not math.isfinite(data.position) or not 0<=data.position<=1: raise HTTPException(400,'Некорректное положение')
+        last=b.get('last',b['started']);dt=min(.45,max(0,now-last));t=now-b['started']
+        target=max(.05,min(.95,.5+.30*math.sin(t*b['speed']+b['seed'])+.12*math.sin(t*b['speed']*(2.3 if b['tier']%2 else 1.7)+b['seed'])))
+        if data.sequence>b.get('sequence',-1):
+            inside=abs(data.position-target)<=b['width']/2
+            b['score']=max(0,b.get('score',0)+dt*(1 if inside else -.55));b['last']=now;b['sequence']=data.sequence
+        done=b.get('score',0)>=b['duration']*.56 or t>b['duration'] or now>r['expires']
+        won=done and b.get('score',0)>=b['duration']*.56 and now<=r['expires'];b['won']=won
+        if done and won:
+            fish=b['fish'];add_item(db,'fishing_fish',uid,fish['key'])
+            db.execute('INSERT INTO fishing_catch_history(telegram_id,fish_key,kg,ts) VALUES (?,?,?,?)',(uid,fish['key'],b['kg'],int(now)))
+            db.execute('INSERT OR IGNORE INTO fishing_discovered VALUES (?,?)',(uid,fish['key']))
+            xp=25+TIERS.index(fish['rarity'])*20+int(b['kg']*2)
+            db.execute('UPDATE fishing_progress SET catches=catches+1,xp=xp+? WHERE telegram_id=?',(xp,uid));b['xp']=xp
+            found=choose_find(0)
+            if found: add_item(db,'fishing_finds',uid,found['key']);b['find']=found
+        db.execute('UPDATE fishing_sessions SET payload=?,finished=? WHERE telegram_id=?',(json.dumps(b),int(done),uid))
+        return dict(done=done,won=won,target=target,score=b.get('score',0),battle=b,state=snapshot(db,uid) if done else None)
 
 
 class Equip(BaseModel):
@@ -212,7 +256,7 @@ def equip(data:Equip,user:dict=Depends(current_user)):
                            (user['id'],data.gear_key)).fetchone()
         if not owned or owned['amount'] < 1:
             raise HTTPException(403, 'Этот предмет не найден в рюкзаке')
-        db.execute(f'UPDATE fishing_progress SET {"rod" if gear["type"]=="rod" else "tackle"}=? WHERE telegram_id=?',
+        db.execute(f'UPDATE fishing_progress SET {"tackle" if gear["type"]=="bait" else gear["type"]}=? WHERE telegram_id=?',
                    (data.gear_key,user['id']))
         return {'state':snapshot(db,user['id'])}
 
@@ -229,11 +273,13 @@ def open_case(data:CaseOpen,user:dict=Depends(current_user)):
     with session(write=True) as db:
         uid = user['id']
         ensure_fishing(db,uid)
-        catches = db.execute('SELECT catches FROM fishing_progress WHERE telegram_id=?',(uid,)).fetchone()['catches']
-        row = db.execute('SELECT opened FROM fishing_cases WHERE telegram_id=? AND case_key=?', (uid,data.case_key)).fetchone()
-        opened = row['opened'] if row else 0
-        if opened >= catches//case['every']:
-            raise HTTPException(409,f'Кейс откроется после каждых {case["every"]} пойманных рыб')
+        balance=db.execute('SELECT coins FROM players WHERE telegram_id=?',(uid,)).fetchone()[0]
+        owned=db.execute('SELECT amount FROM fishing_cases WHERE telegram_id=? AND case_key=?',(uid,data.case_key)).fetchone()
+        if owned and owned[0]>0: db.execute('UPDATE fishing_cases SET amount=amount-1 WHERE telegram_id=? AND case_key=?',(uid,data.case_key))
+        else:
+            if balance<case['price']: raise HTTPException(409,'Недостаточно монет')
+            db.execute('UPDATE players SET coins=coins-? WHERE telegram_id=?',(case['price'],uid))
+        db.execute('UPDATE fishing_progress SET xp=xp+35 WHERE telegram_id=?',(uid,))
         gear_key=RNG.choices(case['items'],weights=case['weights'],k=1)[0]
         add_item(db,'fishing_gear',uid,gear_key)
         db.execute('''INSERT INTO fishing_cases (telegram_id,case_key,opened) VALUES (?,?,1)
@@ -262,3 +308,13 @@ def sell_fish(data:SellFish,user:dict=Depends(current_user)):
             db.execute('DELETE FROM fishing_fish WHERE telegram_id=? AND item_key=?', (uid,data.fish_key))
         db.execute('UPDATE players SET coins=coins+? WHERE telegram_id=?',(reward,uid))
         return {'earned':reward, 'state':snapshot(db,uid), 'coins_added':reward}
+
+@router.post('/buy')
+def buy(data:Equip,user:dict=Depends(current_user)):
+    g=GEAR_BY_ID.get(data.gear_key)
+    if not g: raise HTTPException(404,'Нет предмета')
+    with session(write=True) as db:
+        uid=user['id'];ensure_fishing(db,uid)
+        if db.execute('SELECT coins FROM players WHERE telegram_id=?',(uid,)).fetchone()[0]<g['price']: raise HTTPException(409,'Недостаточно монет')
+        db.execute('UPDATE players SET coins=coins-? WHERE telegram_id=?',(g['price'],uid));add_item(db,'fishing_gear',uid,g['key'])
+        return {'state':snapshot(db,uid)}
