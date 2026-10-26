@@ -22,7 +22,7 @@ import admin
 import botapp
 import fishing
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
-from db import init_db, session
+from db import init_db, session, checkpoint_db
 from auth import signed_user, register
 from config import ADMIN_ID
 from system_state import maintenance_state
@@ -55,6 +55,10 @@ async def lifespan(app: FastAPI):
                 await task
         if bot:
             await bot.session.close()
+        try:
+            checkpoint_db()
+        except Exception:
+            log.exception('Не удалось объединить WAL; подтверждённые изменения остаются в журнале SQLite')
 
 
 # docs/openapi отключены: схема API не должна быть публичной

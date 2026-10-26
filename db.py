@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS fishing_cases (
     PRIMARY KEY (telegram_id,case_key)
 );
 CREATE TABLE IF NOT EXISTS fishing_catch_history (id INTEGER PRIMARY KEY AUTOINCREMENT,telegram_id INTEGER NOT NULL,fish_key TEXT NOT NULL,kg REAL NOT NULL,ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS fishing_buffs (telegram_id INTEGER PRIMARY KEY,multiplier INTEGER NOT NULL DEFAULT 1,expires_at REAL NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS fishing_migrations (telegram_id INTEGER NOT NULL,version TEXT NOT NULL,PRIMARY KEY(telegram_id,version));
 CREATE TABLE IF NOT EXISTS fishing_case_settings (case_key TEXT PRIMARY KEY, config TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS fishing_sessions (telegram_id INTEGER PRIMARY KEY,session_id TEXT NOT NULL,payload TEXT NOT NULL,expires REAL NOT NULL,finished INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS site_settings (
@@ -135,7 +137,7 @@ MIGRATIONS = {
         'blocked': 'INTEGER NOT NULL DEFAULT 0', 'reason': 'TEXT', 'last_seen': 'INTEGER NOT NULL DEFAULT 0',
     },
     'fishing_cases': {'amount':'INTEGER NOT NULL DEFAULT 0'},
-    'fishing_progress': {'xp':'INTEGER NOT NULL DEFAULT 0','reel':"TEXT NOT NULL DEFAULT ''",'line':"TEXT NOT NULL DEFAULT ''",'spoon':"TEXT NOT NULL DEFAULT ''",'spinner':"TEXT NOT NULL DEFAULT ''"},
+    'fishing_progress': {'rescue_at':'INTEGER NOT NULL DEFAULT 0','xp':'INTEGER NOT NULL DEFAULT 0','reel':"TEXT NOT NULL DEFAULT ''",'line':"TEXT NOT NULL DEFAULT ''",'spoon':"TEXT NOT NULL DEFAULT ''",'spinner':"TEXT NOT NULL DEFAULT ''"},
     'cars': {'parked': 'INTEGER NOT NULL DEFAULT 0'},
 }
 
@@ -199,3 +201,10 @@ def init_db() -> None:
     finally:
         conn.close()
     log.info('База готова: %s', DB_PATH)
+
+
+def checkpoint_db() -> None:
+    """Consolidate WAL after graceful shutdown; committed changes already persist with FULL."""
+    conn=_connect()
+    try:conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    finally:conn.close()

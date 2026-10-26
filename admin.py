@@ -1,4 +1,5 @@
 """Full Viva fishing control panel: authenticated, audited administration."""
+from typing import Literal
 import asyncio
 import json
 import math
@@ -195,7 +196,7 @@ def act(data:Act,admin=Depends(admin_user)):
     if uid==ADMIN_ID and data.act=='reset':raise HTTPException(400,'Нельзя сбросить администратора')
     with session(write=True) as db:
         if not db.execute('SELECT 1 FROM players WHERE telegram_id=?',(uid,)).fetchone():raise HTTPException(404,'Игрок не найден')
-        tables={'clear_bag':['fishing_fish','fishing_finds'],'end_cast':['fishing_sessions'],'reset':['fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered','fishing_sessions','fishing_catch_history']}[data.act]
+        tables={'clear_bag':['fishing_fish','fishing_finds'],'end_cast':['fishing_sessions'],'reset':['fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered','fishing_sessions','fishing_catch_history','fishing_buffs']}[data.act]
         for table in tables:db.execute(f'DELETE FROM {table} WHERE telegram_id=?',(uid,))
         if data.act=='reset':db.execute('UPDATE players SET coins=0,nickname=NULL WHERE telegram_id=?',(uid,));ensure_fishing(db,uid)
         audit(db,admin['id'],uid,data.act)
@@ -334,5 +335,18 @@ def live_players(admin=Depends(admin_user)):
     with session() as db:
         rows=db.execute('SELECT p.telegram_id,p.telegram_name,p.nickname,p.coins,b.avatar,b.last_seen,b.blocked,COALESCE(f.xp,0) xp FROM players p JOIN bh b USING(telegram_id) LEFT JOIN fishing_progress f USING(telegram_id) WHERE b.last_seen>=? AND p.telegram_id!=? ORDER BY b.last_seen DESC LIMIT 100',(now-75,ADMIN_ID)).fetchall()
         count=db.execute('SELECT COUNT(*) FROM players p JOIN bh b USING(telegram_id) WHERE b.last_seen>=? AND p.telegram_id!=?',(now-75,ADMIN_ID)).fetchone()[0]
-        active=db.execute('SELECT COUNT(*) FROM fishing_sessions WHERE finished=0 AND expires>?',(now,)).fetchone()[0]
+        active=db.execute('SELECT COUNT(*) FROM fishing_sessions WHERE finished=0',()).fetchone()[0]
     return dict(online=[{**dict(r),'level':level_info(r['xp'])['level']} for r in rows],count=count,active_casts=active,updated_at=now,definition='Подписанная активность за последние 75 секунд')
+
+class LuckGrant(BaseModel):
+    multiplier:Literal[1,2,3,5]
+    minutes:int=Field(default=30,ge=1,le=43200)
+
+@router.post('/players/{uid}/luck')
+def grant_luck(uid:int,data:LuckGrant,admin=Depends(admin_user)):
+    expires=time.time()+data.minutes*60 if data.multiplier>1 else 0
+    with session(write=True) as db:
+        if not db.execute('SELECT 1 FROM players WHERE telegram_id=?',(uid,)).fetchone():raise HTTPException(404,'Игрок не найден')
+        db.execute('INSERT INTO fishing_buffs VALUES (?,?,?) ON CONFLICT(telegram_id) DO UPDATE SET multiplier=excluded.multiplier,expires_at=excluded.expires_at',(uid,data.multiplier,expires))
+        audit(db,admin['id'],uid,'luck',f'x{data.multiplier}, {data.minutes} мин., до {int(expires)}')
+    return player_card(uid,admin)

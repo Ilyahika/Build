@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent   # папка, где лежит проект
 STARTED = time.time()                    # момент запуска сервера (для аптайма в админке)
-VERSION = 'Viva Fishing 4.1'
+VERSION = 'Viva Fishing 5.0'
 
 
 def _env(name: str, default: str = '') -> str:
