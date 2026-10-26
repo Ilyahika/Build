@@ -18,6 +18,8 @@ def expand(fish,gear,cases,tiers,locations):
     for i,f in enumerate(fish):
         tier=tiers.index(f['rarity']);f['weight']=[75,30,12,4,1,.2,.025][tier];f['behavior']=BEHAVIORS[(i+tier)%len(BEHAVIORS)];f['behavior_name']=BEHAVIOR_NAMES[f['behavior']]
         size=(.15+.22*(i%6))*(1+tier*.65)*(1.8 if f['location']=='ocean' else 1)
+        xs=[0,112,218,323,428,533,639,748,857,979,1145];ys=[0,107,212,318,426,531,638,747,856,962,1069,1175,1283];x=i%10;y=i//10
+        f['art']=dict(atlas='fish',index=i,cols=10,rows=12,rect=[xs[x],ys[y],xs[x+1]-xs[x],ys[y+1]-ys[y]],size=[1145,1374])
         f['min_kg']=round(size,2);f['max_kg']=round(size*(2.5+tier*.25),2)
     type_names=dict(rod=['Удочка «Тихий берег»','Спиннинг «Хищник»'],reel=['Катушка «Плавный ход»','Катушка «Турбо»'],line=['Леска «Эластик»','Плетёнка «Титан»'],bait=['Наживка «Глубина»','Приманка «Сияние»'],spoon=['Колебалка «Лист»','Колебалка «Волна»'],spinner=['Вертушка «Искра»','Вертушка «Вихрь»'])
     icons=dict(rod='🎣',reel='⚙️',line='🧵',bait='🪝',spoon='🥄',spinner='🌀')
@@ -44,6 +46,11 @@ def expand(fish,gear,cases,tiers,locations):
          'spoon':f"Рывки −{stats.get('stability',0):.0%} · утомляет рыбу",
          'spinner':f"Подсечка +{stats.get('hook_window',0):.2f} с · находки"
         }[k]
+    lure_index=0
+    for g in gear:
+        if g['type'] in ['bait','spoon','spinner']:
+            xs=[0,156,314,472,630,788,946,1103,1261];ys=[0,155,311,468,624,780,935,1084,1247];x=lure_index%8;y=lure_index//8
+            g['art']=dict(atlas='lure',index=lure_index,cols=8,rows=8,rect=[xs[x],ys[y],xs[x+1]-xs[x],ys[y+1]-ys[y]],size=[1261,1247]);lure_index+=1
     distributions=[[68,20,9,2.6,.35,.045,.005],[30,35,23,10,1.8,.18,.02],[10,23,35,26,5.4,.55,.05],[2,8,25,42,20,2.7,.3]]
     for case,distribution in zip(cases,distributions):
         counts={r:sum(g['rarity']==r for g in gear) for r in tiers}

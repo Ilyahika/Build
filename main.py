@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, Response
 import admin
 import botapp
 import fishing
+import community
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
 from db import init_db, session, checkpoint_db
 from auth import signed_user, register
@@ -102,6 +103,7 @@ def system_status(user: dict = Depends(signed_user)):
     return {**state, 'is_admin': is_admin, 'heartbeat_seconds': 10}
 
 # --------------------------------------------------------------------- API
+app.include_router(community.router)
 app.include_router(fishing.router)      # рыбалка, снасти, инвентарь и кейсы
 app.include_router(admin.router)        # админ-панель
 
@@ -123,6 +125,13 @@ def favicon():
     """Иконки нет — отвечаем пусто, чтобы не было 404 в логах."""
     return Response(status_code=204)
 
+
+@app.get('/assets/{name}')
+def asset(name:str):
+    if name not in {'fish_atlas.png','lure_atlas.png','fish_atlas.webp','lure_atlas.webp'}:raise HTTPException(404,'Not found')
+    path=ROOT/'assets'/name
+    if not path.is_file():raise HTTPException(404,'Not found')
+    return FileResponse(path,headers={'Cache-Control':'public, max-age=86400'})
 
 @app.get('/{name}')
 def static_file(name: str):

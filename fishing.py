@@ -18,12 +18,13 @@ from catalog_v5 import expand, AVATARS
 from fishing_engine import loadout, create_battle, advance, target_at
 
 from auth import current_user
+from community import attempt_state,spend_attempt,reward_state
 from config import ADMIN_ID
 from db import session
 
 router = APIRouter(prefix='/api/fishing', tags=['fishing'])
 RNG = random.SystemRandom()
-COOLDOWN_SECONDS = 180
+COOLDOWN_SECONDS = 60
 
 RARITIES = dict(common='🖤 Обычный', rare='💙 Редкий', improved='🩵 Улучшенный', epic='💜 Эпический', legendary='💛 Легендарный', mythic='❤️ Мифический', absolute='🤍 Абсолютный')
 TIERS = list(RARITIES)
@@ -196,7 +197,7 @@ def snapshot(db, uid: int) -> dict:
         pool,weights=fish_pool(loc['key'],equipment,buff);total=sum(weights)
         odds[loc['key']]=[{**f,'chance':w/total*100} for f,w in zip(pool,weights)]
     return {
-        'best_kg':db.execute('SELECT COALESCE(MAX(kg),0) FROM fishing_catch_history WHERE telegram_id=?',(uid,)).fetchone()[0], 'player':player, 'level':level_info(p['xp']), 'active':active,'buff':buff,'loadout':loadout(equipment,GEAR_BY_ID),'fish_odds':odds, 'server_time':time.time(),
+        'attempts':attempt_state(db,uid),'rewards':reward_state(db,uid),'best_kg':db.execute('SELECT COALESCE(MAX(kg),0) FROM fishing_catch_history WHERE telegram_id=?',(uid,)).fetchone()[0], 'player':player, 'level':level_info(p['xp']), 'active':active,'buff':buff,'loadout':loadout(equipment,GEAR_BY_ID),'fish_odds':odds, 'server_time':time.time(),
         'progress': {'xp':p['xp'], 'equipment':{k:p[k] for k in ['rod','tackle','reel','line','spoon','spinner']}, 'casts':p['casts'], 'catches':caught, 'last_cast':p['last_cast'],
                      'cooldown_seconds':COOLDOWN_SECONDS, 'rod':p['rod'], 'tackle':p['tackle']},
         'fish': inventory(db, 'fishing_fish', uid, FISH_BY_ID),
@@ -251,6 +252,7 @@ def cast(data:Cast,user:dict=Depends(current_user)):
         pool,weights=fish_pool(data.location,equipment,buff_state(db,uid));fish=RNG.choices(pool,weights=weights,k=1)[0]
         kg=round(RNG.uniform(fish['min_kg'],fish['max_kg'])*(1+stats.get('weight_bonus',0)),2)
         battle=create_battle(fish,kg,equipment,stats,RNG.random()*6.28,uuid.uuid4().hex,now,TIERS.index(fish['rarity']))
+        spend_attempt(db,uid)
         db.execute('INSERT OR REPLACE INTO fishing_sessions VALUES (?,?,?,?,0)',(uid,battle['id'],json.dumps(battle),now+86400))
         db.execute('UPDATE fishing_progress SET casts=casts+1,last_cast=? WHERE telegram_id=?',(int(now),uid))
         return {'battle':battle,'state':snapshot(db,uid)}
