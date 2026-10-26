@@ -77,7 +77,6 @@ window.Admin = (() => {
           ${kpi('ТАПОВ',fmt(st.taps))}
           ${kpi('МАШИН',fmt(st.cars))}
           ${kpi('ПОЙМАНО РЫБ',fmt(st.fishing_catches ?? 0))}
-          ${kpi('EXP РЫБАКОВ',fmt(st.fishing_xp_total ?? 0))}
           ${kpi('РЫБ В РЮКЗАКАХ',fmt(st.fish_in_bags ?? 0))}
           ${kpi('НАХОДОК В РЮКЗАКАХ',fmt(st.finds_in_bags ?? 0))}
           ${kpi('ОТКРЫТО КЕЙСОВ',fmt(st.cases_opened ?? 0))}
@@ -187,7 +186,7 @@ window.Admin = (() => {
         ${kv('Дом', `${c.house ?? 1} ур. · ${esc(c.house_name)}`)}${kv('Энергия', Math.round(c.energy ?? 0))}${kv('Игр / побед', `${c.games_played} / ${c.games_won}`)}
         ${kv('Тапов', fmt(c.taps))}${kv('Заработано', '$' + fmt(c.earned))}${kv('Машин', c.cars_total)}${kv('Регистрация', date(c.created_at))}
         ${kv('Был онлайн', ago(c.last_seen))}${kv('Бонус дня', Date.now() / 1000 - c.last_daily >= 86400 ? 'доступен' : 'получен')}
-        ${kv('Рыбалка: уловы', fmt(c.fishing_catches||0))}${kv('Рыбалка: EXP',fmt(c.fishing_xp||0))}${kv('Рыба в рюкзаке', fmt(c.fishing_fish||0))}${kv('Находки', fmt(c.fishing_finds||0))}
+        ${kv('Рыбалка: уловы', fmt(c.fishing_catches||0))}${kv('Рыба в рюкзаке', fmt(c.fishing_fish||0))}${kv('Находки', fmt(c.fishing_finds||0))}
         ${kv('Мины', c.game ? `ставка $${fmt(c.game.bet)}, мин ${c.game.mines}, ${esc(c.game.status)}` : '—')}</div>
       <h2>Баланс и дом</h2>${fld('$', 'coins')}${fld('⭐', 'gems')}${fld('Дом', 'house')}
       <div class="acts"><button class="sm" onclick="Admin.act(${id},'coins_add','10000')">+$10k</button><button class="sm" onclick="Admin.act(${id},'coins_add','1000000')">+$1M</button>

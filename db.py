@@ -71,14 +71,8 @@ CREATE TABLE IF NOT EXISTS fishing_progress (
     casts INTEGER NOT NULL DEFAULT 0,
     catches INTEGER NOT NULL DEFAULT 0,
     last_cast INTEGER NOT NULL DEFAULT 0,
-    xp_total INTEGER NOT NULL DEFAULT 0,
     rod TEXT NOT NULL DEFAULT 'starter_rod',
     tackle TEXT NOT NULL DEFAULT 'starter_lure'
-);
-CREATE TABLE IF NOT EXISTS fishing_cast_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER NOT NULL,
-    cast_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS fishing_fish (
     telegram_id INTEGER NOT NULL,
@@ -127,7 +121,6 @@ CREATE INDEX IF NOT EXISTS idx_players_coin ON players(coins);
 CREATE INDEX IF NOT EXISTS idx_cars_owner   ON cars(telegram_id, parked);
 CREATE INDEX IF NOT EXISTS idx_log_ts       ON admin_log(ts);
 CREATE INDEX IF NOT EXISTS idx_fish_owner ON fishing_fish(telegram_id);
-CREATE INDEX IF NOT EXISTS idx_fishing_cast_window ON fishing_cast_log(telegram_id, cast_at);
 '''
 
 # Колонки, которые могли отсутствовать в базах старых версий
@@ -139,7 +132,6 @@ MIGRATIONS = {
         'blocked': 'INTEGER NOT NULL DEFAULT 0', 'reason': 'TEXT', 'last_seen': 'INTEGER NOT NULL DEFAULT 0',
     },
     'cars': {'parked': 'INTEGER NOT NULL DEFAULT 0'},
-    'fishing_progress': {'xp_total': 'INTEGER NOT NULL DEFAULT 0'},
 }
 
 

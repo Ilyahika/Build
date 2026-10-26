@@ -7,7 +7,7 @@
 <!-- Адрес сервера API (Render), БЕЗ / в конце. Пусто = тот же сервер, что отдал страницу. -->
 <meta name="api-base" content="">
 <title>Viva</title>
-<link rel="stylesheet" href="./style.css?v=fishv31">
+<link rel="stylesheet" href="./style.css?v=fishv3">
 </head>
 <body>
 <!-- Полноэкранный экран техработ: скрыт для администратора и вне режима обслуживания -->
@@ -46,11 +46,11 @@
 <div id="status" role="status"></div>
 <nav id="nav"></nav>
 
-<script src="./fishing_ui.js?v=fishv31"></script>
+<script src="./fishing_ui.js?v=fishv3"></script>
 <script>
 /* ============ Загрузчик с диагностикой. Не зависит от внешних файлов: работает, даже если app.js или telegram.org недоступны ============ */
 (function () {
-  var VER = 'fishv31', T0 = Date.now(), LOG = [];
+  var VER = 'fishv3', T0 = Date.now(), LOG = [];
   var ICON = {ok: '✅', wait: '⏳', fail: '❌', warn: '⚠️'};
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }

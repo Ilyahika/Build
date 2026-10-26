@@ -71,7 +71,6 @@ def stats(deep: bool = False, admin: dict = Depends(admin_user)):
             'fish_in_bags': db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_fish').fetchone()[0],
             'finds_in_bags': db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_finds').fetchone()[0],
             'cases_opened': db.execute('SELECT COALESCE(SUM(opened),0) FROM fishing_cases').fetchone()[0],
-            'fishing_xp_total': db.execute('SELECT COALESCE(SUM(xp_total),0) FROM fishing_progress').fetchone()[0],
         }
         integrity = db.execute('PRAGMA quick_check').fetchone()[0] if deep else None
     st = {**dict(pl), **dict(bh), 'cars': rows['cars'], 'levels': levels, **fishing_stats}
@@ -162,15 +161,14 @@ def player_card(id: int, admin: dict = Depends(admin_user)):
                 for c in db.execute('SELECT id, car, parked FROM cars WHERE telegram_id=? ORDER BY parked DESC, id DESC LIMIT 30', (id,))]
         game = db.execute('SELECT bet, mines, status FROM mines2 WHERE telegram_id=?', (id,)).fetchone()
         cars_total = db.execute('SELECT COUNT(*) FROM cars WHERE telegram_id=?', (id,)).fetchone()[0]
-        fprog = db.execute('SELECT catches, casts, xp_total FROM fishing_progress WHERE telegram_id=?', (id,)).fetchone()
+        fprog = db.execute('SELECT catches, casts FROM fishing_progress WHERE telegram_id=?', (id,)).fetchone()
         fishes = db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_fish WHERE telegram_id=?', (id,)).fetchone()[0]
         finds = db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_finds WHERE telegram_id=?', (id,)).fetchone()[0]
     data = dict(row)
     level = min(max(data.get('house') or 1, 1), MAX_LEVEL)
     data.update(cars=cars, cars_total=cars_total, game=dict(game) if game else None, is_admin=id == ADMIN_ID,
                 house_name=HOUSE_NAMES[level - 1], fishing_catches=fprog['catches'] if fprog else 0,
-                fishing_casts=fprog['casts'] if fprog else 0,
-                fishing_xp=fprog['xp_total'] if fprog else 0, fishing_fish=fishes, fishing_finds=finds)
+                fishing_casts=fprog['casts'] if fprog else 0, fishing_fish=fishes, fishing_finds=finds)
     return data
 
 
@@ -191,7 +189,7 @@ def _reset(db, t, n, raw, now):
     """Полный сброс аккаунта игрока к начальному состоянию."""
     db.execute('DELETE FROM cars WHERE telegram_id=?', (t,))
     db.execute('DELETE FROM mines2 WHERE telegram_id=?', (t,))
-    for table in ('fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered','fishing_cast_log'):
+    for table in ('fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered'):
         db.execute(f'DELETE FROM {table} WHERE telegram_id=?', (t,))
     db.execute('UPDATE players SET coins=0, games_played=0, games_won=0, nickname=NULL WHERE telegram_id=?', (t,))
     db.execute("UPDATE bh SET gems=0, house=1, earned=0, taps=0, last_claim=?, avatar='🏠', last_daily=0 WHERE telegram_id=?", (now, t))

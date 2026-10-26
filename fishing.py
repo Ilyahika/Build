@@ -17,53 +17,7 @@ from db import session
 
 router = APIRouter(prefix='/api/fishing', tags=['fishing'])
 RNG = random.SystemRandom()
-COOLDOWN_SECONDS = 4  # короткая защита от случайного двойного нажатия
-CAST_WINDOW_SECONDS = 10 * 60
-CAST_LIMIT = 10
-# Уровни рыбака, независимые от уровня дома.
-# Стоимость следующего уровня растёт квадратично: 80, 116, 164, 224, ...
-FISH_XP = {'common': 20, 'rare': 35, 'epic': 60, 'marine': 85, 'secret': 140}
-CASE_XP = {'shore': 50, 'lake': 110, 'marine': 240, 'secret': 450}
-
-
-def xp_required(level: int) -> int:
-    n = level - 1
-    return 80 + 30 * n + 6 * n * n
-
-
-def xp_level(total: int) -> dict:
-    total = max(0, int(total))
-    level = 1
-    spent = 0
-    # Опыт хранится суммарно; уровень вычисляем без сброса данных при миграции.
-    while level < 1000:
-        need = xp_required(level)
-        if total - spent < need:
-            break
-        spent += need
-        level += 1
-    current = total - spent
-    needed = xp_required(level)
-    return {'level': level, 'xp_total': total, 'xp_current': current,
-            'xp_required': needed, 'xp_remaining': max(0, needed - current),
-            'xp_percent': round(100 * min(1.0, current / needed), 2)}
-
-
-def cast_quota(db, uid: int, now: int) -> dict:
-    # Скользящее окно: не более 10 забросов за последние 600 секунд.
-    if uid == ADMIN_ID:
-        return {'limit': CAST_LIMIT, 'used': 0, 'remaining': CAST_LIMIT,
-                'reset_at': 0, 'window_seconds': CAST_WINDOW_SECONDS,
-                'server_time': now, 'unlimited': True}
-    threshold = now - CAST_WINDOW_SECONDS
-    stamps = [r[0] for r in db.execute('''SELECT cast_at FROM fishing_cast_log
-        WHERE telegram_id=? AND cast_at>? ORDER BY cast_at, id''', (uid, threshold))]
-    used = len(stamps)
-    return {'limit': CAST_LIMIT, 'used': used, 'remaining': max(0, CAST_LIMIT - used),
-            'reset_at': stamps[0] + CAST_WINDOW_SECONDS if stamps else 0,
-            'window_seconds': CAST_WINDOW_SECONDS, 'server_time': now,
-            'unlimited': False}
-
+COOLDOWN_SECONDS = 4
 
 RARITIES = {
     'common': 'Обычная', 'rare': 'Редкая', 'epic': 'Эпическая',
@@ -71,11 +25,11 @@ RARITIES = {
 }
 
 LOCATIONS = [
-    {'level_required':1, 'key':'pond', 'name':'Пруд', 'icon':'🌿', 'subtitle':'Тихий берег', 'description':'Караси, окуни и золотой карп', 'color':'#6dba8a'},
-    {'level_required':5, 'key':'lake', 'name':'Озеро', 'icon':'🏞️', 'subtitle':'Глубокая вода', 'description':'Судак, щука и озёрный призрак', 'color':'#4aaeca'},
-    {'level_required':10, 'key':'sea', 'name':'Море', 'icon':'🌅', 'subtitle':'Солёный прибой', 'description':'Тунец и морские редкости', 'color':'#58bce3'},
-    {'level_required':15, 'key':'ocean', 'name':'Океан', 'icon':'🌊', 'subtitle':'Дальние глубины', 'description':'Марлин и глубинный левиафан', 'color':'#347dbe'},
-    {'level_required':20, 'key':'stream', 'name':'Секретный ручей', 'icon':'✨', 'subtitle':'Таинственное течение', 'description':'Лунный угорь и кристальный карп', 'color':'#b88aee'},
+    {'key':'pond', 'name':'Пруд', 'icon':'🌿', 'subtitle':'Тихий берег', 'description':'Караси, окуни и золотой карп', 'color':'#6dba8a'},
+    {'key':'lake', 'name':'Озеро', 'icon':'🏞️', 'subtitle':'Глубокая вода', 'description':'Судак, щука и озёрный призрак', 'color':'#4aaeca'},
+    {'key':'sea', 'name':'Море', 'icon':'🌅', 'subtitle':'Солёный прибой', 'description':'Тунец и морские редкости', 'color':'#58bce3'},
+    {'key':'ocean', 'name':'Океан', 'icon':'🌊', 'subtitle':'Дальние глубины', 'description':'Марлин и глубинный левиафан', 'color':'#347dbe'},
+    {'key':'stream', 'name':'Секретный ручей', 'icon':'✨', 'subtitle':'Таинственное течение', 'description':'Лунный угорь и кристальный карп', 'color':'#b88aee'},
 ]
 
 # 20 distinct collectible fish: 4 per location. Rarity weights are intentionally
@@ -164,20 +118,17 @@ def inventory(db, table: str, uid: int, catalog: dict):
 def snapshot(db, uid: int) -> dict:
     p = db.execute('SELECT * FROM fishing_progress WHERE telegram_id=?', (uid,)).fetchone()
     caught = p['catches']
-    experience = xp_level(p['xp_total'])
-    quota = cast_quota(db, uid, int(time.time()))
     gear = [dict(GEAR_BY_ID[r['gear_key']], amount=r['amount']) for r in db.execute(
         'SELECT gear_key,amount FROM fishing_gear WHERE telegram_id=? AND amount>0', (uid,))
         if r['gear_key'] in GEAR_BY_ID]
     opened = {r['case_key']:r['opened'] for r in db.execute('SELECT case_key,opened FROM fishing_cases WHERE telegram_id=?', (uid,))}
-    cases = [{**c, 'xp_reward':CASE_XP[c['key']], 'available':max(0,caught//c['every']-opened.get(c['key'],0)),
+    cases = [{**c, 'available':max(0,caught//c['every']-opened.get(c['key'],0)),
               'opened':opened.get(c['key'],0),
               'rewards': [{**GEAR_BY_ID[key], 'chance':weight} for key,weight in zip(c['items'],c['weights'])]}
              for c in CASES]
     return {
         'progress': {'casts':p['casts'], 'catches':caught, 'last_cast':p['last_cast'],
-                     'cooldown_seconds':COOLDOWN_SECONDS, 'rod':p['rod'], 'tackle':p['tackle'], **experience},
-        'quota': quota,
+                     'cooldown_seconds':COOLDOWN_SECONDS, 'rod':p['rod'], 'tackle':p['tackle']},
         'fish': inventory(db, 'fishing_fish', uid, FISH_BY_ID),
         'finds': inventory(db, 'fishing_finds', uid, FINDS_BY_ID),
         'discovered': [r[0] for r in db.execute('SELECT fish_key FROM fishing_discovered WHERE telegram_id=?', (uid,))],
@@ -231,14 +182,6 @@ def cast(data:Cast, user:dict=Depends(current_user)):
         uid = user['id']
         ensure_fishing(db,uid)
         row = db.execute('SELECT * FROM fishing_progress WHERE telegram_id=?', (uid,)).fetchone()
-        level = xp_level(row['xp_total'])['level']
-        required = LOC_BY_ID[data.location]['level_required']
-        if level < required:
-            raise HTTPException(403, f'Локация «{LOC_BY_ID[data.location]["name"]}» откроется на уровне рыбака {required}. Сейчас уровень {level}.')
-        quota = cast_quota(db, uid, now)
-        if quota['remaining'] <= 0 and uid != ADMIN_ID:
-            left = max(1, quota['reset_at'] - now)
-            raise HTTPException(429, f'10 забросов за 10 минут использованы. Следующий через {left} сек.')
         if uid != ADMIN_ID and now - row['last_cast'] < COOLDOWN_SECONDS:
             raise HTTPException(429, f'Подожди {COOLDOWN_SECONDS - (now-row["last_cast"])} сек. до следующего заброса')
         rod, tackle = row['rod'], row['tackle']
@@ -249,15 +192,8 @@ def cast(data:Cast, user:dict=Depends(current_user)):
         db.execute('INSERT OR IGNORE INTO fishing_discovered (telegram_id, fish_key) VALUES (?,?)', (uid,fish['key']))
         if found:
             add_item(db,'fishing_finds',uid,found['key'])
-        gained_xp = FISH_XP[fish['rarity']]
-        db.execute('''UPDATE fishing_progress SET casts=casts+1, catches=catches+1,
-                      last_cast=?, xp_total=xp_total+? WHERE telegram_id=?''', (now,gained_xp,uid))
-        if uid != ADMIN_ID:
-            db.execute('DELETE FROM fishing_cast_log WHERE telegram_id=? AND cast_at<=?',
-                       (uid, now-CAST_WINDOW_SECONDS))
-            db.execute('INSERT INTO fishing_cast_log (telegram_id,cast_at) VALUES (?,?)', (uid,now))
-        return {'result': {'fish':fish,'find':found,'location':LOC_BY_ID[data.location]['name'], 'xp_gained':gained_xp,
-                           'level_before':level, 'level_after':xp_level(row['xp_total']+gained_xp)['level']},
+        db.execute('UPDATE fishing_progress SET casts=casts+1, catches=catches+1, last_cast=? WHERE telegram_id=?', (now,uid))
+        return {'result': {'fish':fish,'find':found,'location':LOC_BY_ID[data.location]['name']},
                 'state':snapshot(db,uid)}
 
 
@@ -302,13 +238,7 @@ def open_case(data:CaseOpen,user:dict=Depends(current_user)):
         add_item(db,'fishing_gear',uid,gear_key)
         db.execute('''INSERT INTO fishing_cases (telegram_id,case_key,opened) VALUES (?,?,1)
                       ON CONFLICT(telegram_id,case_key) DO UPDATE SET opened=opened+1''',(uid,data.case_key))
-        gained_xp = CASE_XP[data.case_key]
-        previous_xp = db.execute('SELECT xp_total FROM fishing_progress WHERE telegram_id=?',(uid,)).fetchone()[0]
-        db.execute('UPDATE fishing_progress SET xp_total=xp_total+? WHERE telegram_id=?', (gained_xp,uid))
-        return {'reward':GEAR_BY_ID[gear_key], 'xp_gained':gained_xp,
-                'level_before':xp_level(previous_xp)['level'],
-                'level_after':xp_level(previous_xp+gained_xp)['level'],
-                'state':snapshot(db,uid)}
+        return {'reward':GEAR_BY_ID[gear_key], 'state':snapshot(db,uid)}
 
 
 class SellFish(BaseModel):
