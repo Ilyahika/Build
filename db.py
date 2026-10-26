@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS fishing_cases (
     PRIMARY KEY (telegram_id,case_key)
 );
 CREATE TABLE IF NOT EXISTS fishing_catch_history (id INTEGER PRIMARY KEY AUTOINCREMENT,telegram_id INTEGER NOT NULL,fish_key TEXT NOT NULL,kg REAL NOT NULL,ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS fishing_case_settings (case_key TEXT PRIMARY KEY, config TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS fishing_sessions (telegram_id INTEGER PRIMARY KEY,session_id TEXT NOT NULL,payload TEXT NOT NULL,expires REAL NOT NULL,finished INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS site_settings (
     id INTEGER PRIMARY KEY CHECK(id=1),

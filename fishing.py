@@ -5,6 +5,7 @@ All changes are inside SQLite IMMEDIATE transactions to prevent double-claiming.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 import math
@@ -116,6 +117,16 @@ LOC_BY_ID = {r['key']: r for r in LOCATIONS}
 CASE_BY_ID = {r['key']: r for r in CASES}
 
 
+def effective_cases(db):
+    overrides={r['case_key']:json.loads(r['config']) for r in db.execute('SELECT case_key,config FROM fishing_case_settings')}
+    result=[]
+    for case in CASES:
+        item={**case,'enabled':True,**overrides.get(case['key'],{})}
+        item['revision']=hashlib.sha256(json.dumps(item,sort_keys=True).encode()).hexdigest()[:16]
+        result.append(item)
+    return result
+
+
 def ensure_fishing(db, uid: int):
     """Create missing progress and free starter gear without touching existing balances."""
     created=db.execute('INSERT OR IGNORE INTO fishing_progress (telegram_id) VALUES (?)', (uid,)).rowcount
@@ -138,8 +149,8 @@ def snapshot(db, uid: int) -> dict:
         if r['gear_key'] in GEAR_BY_ID]
     opened = {r['case_key']:r['opened'] for r in db.execute('SELECT case_key,opened FROM fishing_cases WHERE telegram_id=?', (uid,))}
     amounts={r['case_key']:r['amount'] for r in db.execute('SELECT case_key,amount FROM fishing_cases WHERE telegram_id=?',(uid,))}
-    cases = [{**c,'amount':amounts.get(c['key'],0),'opened':opened.get(c['key'],0),'rewards':[{**GEAR_BY_ID[k],'chance':round(w/sum(c['weights'])*100,2)} for k,w in zip(c['items'],c['weights'])]} for c in CASES]
-    player = dict(db.execute('SELECT p.*,b.avatar,b.blocked FROM players p JOIN bh b USING(telegram_id) WHERE telegram_id=?',(uid,)).fetchone())
+    cases = [{**c,'amount':amounts.get(c['key'],0),'opened':opened.get(c['key'],0),'rewards':[{**GEAR_BY_ID[k],'chance':round(w/sum(c['weights'])*100,2)} for k,w in zip(c['items'],c['weights'])]} for c in effective_cases(db)]
+    player = dict(db.execute('SELECT p.*,b.avatar,b.blocked,b.reason,b.last_seen FROM players p JOIN bh b USING(telegram_id) WHERE telegram_id=?',(uid,)).fetchone())
     active = db.execute('SELECT payload FROM fishing_sessions WHERE telegram_id=? AND finished=0 AND expires>?',(uid,time.time())).fetchone()
     return {
         'best_kg':db.execute('SELECT COALESCE(MAX(kg),0) FROM fishing_catch_history WHERE telegram_id=?',(uid,)).fetchone()[0], 'player':player, 'level':level_info(p['xp']), 'active':json.loads(active[0]) if active else None, 'server_time':time.time(),
@@ -198,6 +209,9 @@ def cast(data:Cast, user:dict=Depends(current_user)):
         active=db.execute('SELECT payload FROM fishing_sessions WHERE telegram_id=? AND finished=0 AND expires>?',(uid,now)).fetchone()
         if active: return {'battle':json.loads(active[0]),'state':snapshot(db,uid)}
         if now-row['last_cast']<COOLDOWN_SECONDS: raise HTTPException(429,f"Следующий заброс через {math.ceil(COOLDOWN_SECONDS-(now-row['last_cast']))} сек.")
+        for slot in ['rod','tackle']:
+            owned=db.execute('SELECT amount FROM fishing_gear WHERE telegram_id=? AND gear_key=?',(uid,row[slot])).fetchone()
+            if not owned or owned[0]<1: raise HTTPException(409,'Перед забросом надень удочку и приманку на главном экране')
         fish=choose_fish(data.location,row['rod'],row['tackle']); tier=TIERS.index(fish['rarity'])
         kg=round(RNG.uniform(.3,2.5)*(1+tier*.9),2)
         power=sum(GEAR_BY_ID.get(row[k],{}).get('luck',0) for k in ['rod','tackle','reel','line','spoon','spinner'])
@@ -263,6 +277,7 @@ def equip(data:Equip,user:dict=Depends(current_user)):
 
 class CaseOpen(BaseModel):
     case_key: str
+    revision: str | None = None
 
 
 @router.post('/case/open')
@@ -273,6 +288,9 @@ def open_case(data:CaseOpen,user:dict=Depends(current_user)):
     with session(write=True) as db:
         uid = user['id']
         ensure_fishing(db,uid)
+        case=next(c for c in effective_cases(db) if c['key']==data.case_key)
+        if not case['enabled']: raise HTTPException(409,'Кейс временно недоступен')
+        if data.revision is not None and data.revision!=case['revision']: raise HTTPException(409,'Настройки кейса изменились. Проверь новые шансы и цену.')
         balance=db.execute('SELECT coins FROM players WHERE telegram_id=?',(uid,)).fetchone()[0]
         owned=db.execute('SELECT amount FROM fishing_cases WHERE telegram_id=? AND case_key=?',(uid,data.case_key)).fetchone()
         if owned and owned[0]>0: db.execute('UPDATE fishing_cases SET amount=amount-1 WHERE telegram_id=? AND case_key=?',(uid,data.case_key))
@@ -311,10 +329,4 @@ def sell_fish(data:SellFish,user:dict=Depends(current_user)):
 
 @router.post('/buy')
 def buy(data:Equip,user:dict=Depends(current_user)):
-    g=GEAR_BY_ID.get(data.gear_key)
-    if not g: raise HTTPException(404,'Нет предмета')
-    with session(write=True) as db:
-        uid=user['id'];ensure_fishing(db,uid)
-        if db.execute('SELECT coins FROM players WHERE telegram_id=?',(uid,)).fetchone()[0]<g['price']: raise HTTPException(409,'Недостаточно монет')
-        db.execute('UPDATE players SET coins=coins-? WHERE telegram_id=?',(g['price'],uid));add_item(db,'fishing_gear',uid,g['key'])
-        return {'state':snapshot(db,uid)}
+    raise HTTPException(403,'Оснастка доступна только в кейсах')

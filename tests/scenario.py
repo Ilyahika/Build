@@ -42,7 +42,8 @@ assert r.json()['state']['level']['xp']>0
 # Repeated settlement cannot duplicate fish or XP.
 r2=c.post('/api/fishing/tick',json={'id':b['id'],'position':.5,'sequence':200});assert r2.json()['state']['progress']['catches']==1
 assert c.post('/api/fishing/cast',json={'location':'pond'}).status_code==429
-assert c.post('/api/fishing/buy',json={'gear_key':'reel_rare'}).status_code==200
+assert c.post('/api/fishing/buy',json={'gear_key':'reel_rare'}).status_code==403
+assert c.post(f'/api/admin/players/{uid}',json={'kind':'gear','key':'reel_rare','delta':1}).status_code==200
 assert c.post('/api/fishing/equip',json={'gear_key':'reel_rare'}).json()['state']['progress']['equipment']['reel']=='reel_rare'
 assert c.post('/api/fishing/case/open',json={'case_key':'shore'}).status_code==200
 assert c.post('/api/fishing/sell',json={'fish_key':'all'}).status_code==200
@@ -53,12 +54,38 @@ before=c.get('/api/fishing/state').json();init_db();after=c.get('/api/fishing/st
 for k in ['player','progress','level','fish','gear','cases']:assert before[k]==after[k],k
 # Insufficient funds must roll back inventory and XP.
 with session(write=True) as db:db.execute('UPDATE players SET coins=0 WHERE telegram_id=?',(uid,))
-assert c.post('/api/fishing/buy',json={'gear_key':'reel_absolute'}).status_code==409
+assert c.post('/api/fishing/buy',json={'gear_key':'reel_absolute'}).status_code==403
 assert c.get('/api/admin/stats').status_code==200
 assert c.get('/api/admin/log').status_code==200
 assert c.post('/api/bh/tap',json={}).status_code==404
-print('PASS: levels, session resume, catch verification, replay protection, cooldown, purchases, equipment, cases, sales, admin inventory and XP, restart persistence, insufficient funds, legacy routes disabled')
+print('PASS: levels, session resume, catch verification, replay protection, cooldown, direct-purchase denial, equipment, editable case weights, cases, sales, full admin panel and XP, restart persistence, insufficient funds, legacy routes disabled')
 
+# Restored panel endpoints and server-side case editor.
+for url in ['/api/admin/stats?deep=true','/api/admin/players?q=Тест&sort=xp','/api/admin/players?flt=live','/api/admin/live','/api/admin/maintenance','/api/admin/broadcast',f'/api/admin/player?id={uid}','/api/admin/cases']:
+ r=c.get(url);assert r.status_code==200,(url,r.text)
+assert c.get('/api/admin/player?id=999999').status_code==404
+assert c.post('/api/admin/cases/shore',json={'price':50,'enabled':True,'weights':{'reel_absolute':0}}).status_code==400
+assert c.post('/api/admin/cases/shore',json={'price':50,'enabled':True,'weights':{'unknown':1}}).status_code==400
+r=c.post('/api/admin/cases/shore',json={'price':50,'enabled':True,'weights':{'reel_absolute':1,'starter_rod':0}});assert r.status_code==200,r.text
+init_db() # settings must survive reopening the DB
+st=c.get('/api/fishing/state').json();case=next(x for x in st['cases'] if x['key']=='shore')
+assert case['rewards'][0]['key']=='reel_absolute' and case['rewards'][0]['chance']==100
+# A granted case is used before coins. Every other test opening follows the edited weights.
+with session(write=True) as db:
+ db.execute('UPDATE players SET coins=100 WHERE telegram_id=?',(uid,))
+ db.execute('UPDATE fishing_cases SET amount=0 WHERE telegram_id=?',(uid,))
+assert c.post('/api/fishing/case/open',json={'case_key':'shore','revision':'old-settings'}).status_code==409
+r=c.post('/api/fishing/case/open',json={'case_key':'shore'});assert r.status_code==200,r.text
+assert r.json()['reward']['key']=='reel_absolute'
+assert r.json()['state']['player']['coins']==50
+xp=r.json()['state']['level']['xp']
+assert c.post('/api/admin/cases/shore',json={'price':50,'enabled':False,'weights':{'reel_absolute':1}}).status_code==200
+assert c.post('/api/fishing/case/open',json={'case_key':'shore'}).status_code==409
+assert c.get('/api/fishing/state').json()['level']['xp']==xp
+assert c.post('/api/admin/act',json={'telegram_id':uid,'act':'coins_set','value':'1234'}).status_code==200
+assert c.post('/api/admin/act',json={'telegram_id':uid,'act':'xp_set','value':'500'}).status_code==200
+assert c.get('/api/fishing/state').json()['level']['xp']==500
+assert c.post('/api/admin/act',json={'telegram_id':1181838335,'act':'block','value':'test'}).status_code in (400,404)
 app.dependency_overrides.pop(admin_user)
 assert c.get('/api/admin/stats').status_code==403
 assert c.post(f'/api/admin/players/{uid}',json={'kind':'coins','delta':100}).status_code==403
