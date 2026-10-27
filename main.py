@@ -111,7 +111,7 @@ app.include_router(admin.router)        # админ-панель
 
 # --------------------------------------------------------------------- интерфейс
 # Отдаём только перечисленные файлы — исходники сервера (main.py и т.д.) не выставляются наружу
-STATIC = {'v12.js':'application/javascript','admin_v12.js':'application/javascript','v12.css':'text/css','v11.js':'application/javascript','style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js':'application/javascript'}
+STATIC = {'v13.js':'application/javascript','v13.css':'text/css','v12.js':'application/javascript','admin_v12.js':'application/javascript','v12.css':'text/css','v11.js':'application/javascript','style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js':'application/javascript'}
 # no-cache = «всегда сверяйся с сервером»; благодаря ETag неизменный файл отдаётся как 304 без тела
 NO_CACHE = {'Cache-Control': 'no-cache'}
 
@@ -130,7 +130,7 @@ def favicon():
 
 @app.get('/assets/{name}')
 def asset(name:str):
-    if not (__import__('re').fullmatch(r'fish12_(?:0[0-9]|1[0-9])\.webp',name)) and name not in {'fish_atlas.png','lure_atlas.png','fish_atlas.webp','lure_atlas.webp'}:raise HTTPException(404,'Not found')
+    if not __import__('re').fullmatch(r'emoji-[a-f0-9-]{1,80}\.svg',name) and not (__import__('re').fullmatch(r'fish12_(?:0[0-9]|1[0-9])\.webp',name)) and name not in {'fish_atlas.png','lure_atlas.png','fish_atlas.webp','lure_atlas.webp'}:raise HTTPException(404,'Not found')
     path=ROOT/'assets'/name
     if not path.is_file():raise HTTPException(404,'Not found')
     return FileResponse(path,headers={'Cache-Control':'public, max-age=86400'})
