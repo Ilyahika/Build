@@ -41,7 +41,7 @@ for i in range(5):
 assert req('POST','/api/fishing/cast',{'location':'pond'}).status_code==429
 before=req('GET','/api/fishing/state').json();init_db();after=req('GET','/api/fishing/state').json()
 assert before['attempts']==after['attempts'] and before['rewards']==after['rewards']
-now[0]+=60
+now[0]+=120
 assert req('POST','/api/fishing/cast',{'location':'pond'}).status_code==200
 now[0]+=3600
 assert req('POST','/api/community/rewards/claim',{'kind':'hourly'}).status_code==200
@@ -52,4 +52,4 @@ assert req('GET','/assets/lure_atlas.png').status_code==200
 assert req('GET','/assets/config.py').status_code==404
 app.dependency_overrides.pop(admin_user)
 assert req('POST','/api/community/chat/delete',{'id':mid}).status_code==403
-print('PASS: 5-attempt bank, minute regeneration and resume, atomic hourly/daily rewards, streak, chat persistence/slow mode/moderation, image assets and authorization')
+print('PASS: 5-attempt bank, two-minute regeneration and resume, atomic hourly/daily rewards, streak, chat persistence/slow mode/moderation, image assets and authorization')

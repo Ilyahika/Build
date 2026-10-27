@@ -194,6 +194,8 @@ def init_db() -> None:
     try:
         conn.execute('PRAGMA journal_mode=WAL')     # режим журнала сохраняется в файле БД навсегда
         conn.executescript(SCHEMA)
+        from features_v11 import SCHEMA as V11_SCHEMA
+        conn.executescript(V11_SCHEMA)
         for table, columns in MIGRATIONS.items():
             have = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
             for column, ddl in columns.items():

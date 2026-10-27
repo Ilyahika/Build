@@ -9,16 +9,16 @@ router=APIRouter(prefix='/api/community')
 
 def attempt_state(db,uid):
     now=int(time.time());r=db.execute('SELECT * FROM fishing_attempts WHERE telegram_id=?',(uid,)).fetchone()
-    restored=max(0,(now-r['window_start'])//60) if r else 0
+    restored=max(0,(now-r['window_start'])//120) if r else 0
     missing=max(0,min(5,r['used'])-restored) if r else 0
-    next_at=r['window_start']+(restored+1)*60 if missing else 0
-    return dict(limit=5,remaining=5-missing,next_at=next_at,resets_at=next_at,period_seconds=60)
+    next_at=r['window_start']+(restored+1)*120 if missing else 0
+    return dict(limit=5,remaining=5-missing,next_at=next_at,resets_at=next_at,period_seconds=120)
 
 def spend_attempt(db,uid):
     now=int(time.time());state=attempt_state(db,uid)
-    if state['remaining']<=0:raise HTTPException(429,'Нет попыток. Одна попытка восстанавливается каждую минуту.')
+    if state['remaining']<=0:raise HTTPException(429,'Нет попыток. Одна попытка восстанавливается каждые 2 минуты.')
     # Preserve partial-minute progress while the bank is below capacity.
-    anchor=now if state['remaining']==5 else state['next_at']-60
+    anchor=now if state['remaining']==5 else state['next_at']-120
     used=6-state['remaining']
     db.execute('INSERT INTO fishing_attempts VALUES (?,?,?) ON CONFLICT(telegram_id) DO UPDATE SET window_start=excluded.window_start,used=excluded.used',(uid,anchor,used))
 

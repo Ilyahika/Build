@@ -157,7 +157,9 @@ def change(uid:int,data:Change,admin=Depends(admin_user)):
         elif data.kind=='block':
             if uid==ADMIN_ID and data.delta>0: raise HTTPException(400,'Нельзя заблокировать администратора')
             db.execute('UPDATE bh SET blocked=?,reason=? WHERE telegram_id=?',(int(data.delta>0),data.reason,uid))
-        elif data.kind=='cooldown':db.execute('UPDATE fishing_progress SET last_cast=0 WHERE telegram_id=?',(uid,))
+        elif data.kind=='cooldown':
+            db.execute('UPDATE fishing_progress SET last_cast=0 WHERE telegram_id=?',(uid,))
+            db.execute('DELETE FROM fishing_attempts WHERE telegram_id=?',(uid,))
         elif data.kind in ['gear','fish','find','case']:
             cat,table,col={'gear':(GEAR_BY_ID,'fishing_gear','gear_key'),'fish':(FISH_BY_ID,'fishing_fish','item_key'),'find':(FINDS_BY_ID,'fishing_finds','item_key'),'case':(CASE_BY_ID,'fishing_cases','case_key')}[data.kind]
             if data.key not in cat:raise HTTPException(400,'Неизвестный предмет')
@@ -170,6 +172,14 @@ def change(uid:int,data:Change,admin=Depends(admin_user)):
                     fallback=next((k for k in remaining if k in GEAR_BY_ID and GEAR_BY_ID[k]['type']==g['type']),'')
                     db.execute(f'UPDATE fishing_progress SET {slot}=? WHERE telegram_id=? AND {slot}=?',(fallback,uid,data.key))
         else:raise HTTPException(400,'Неизвестное действие')
+        if data.kind=='fish':
+            f=FISH_BY_ID[data.key]
+            if data.delta>0:
+                if data.delta>1000:raise HTTPException(400,'До 1000 рыб за раз')
+                db.executemany("INSERT INTO catches_v11(telegram_id,fish_key,kg) VALUES (?,?,?)",[(uid,data.key,f['min_kg'])]*data.delta)
+            elif data.delta<0:
+                db.execute("DELETE FROM catches_v11 WHERE id IN (SELECT id FROM catches_v11 WHERE telegram_id=? AND fish_key=? AND place='bag' LIMIT ?)",(uid,data.key,-data.delta))
+        db.execute('INSERT INTO notices_v11(telegram_id,text,kind) VALUES (?,?,?)',(uid,'Администратор изменил: '+data.kind+' '+str(data.delta),'moderator'))
         db.execute('INSERT INTO admin_log(ts,admin_id,target,action,value) VALUES (?,?,?,?,?)',(int(time.time()),admin['id'],uid,data.kind,f'{data.key}: {data.delta}; {data.reason}'))
         return snapshot(db,uid)
 
@@ -196,7 +206,7 @@ def act(data:Act,admin=Depends(admin_user)):
     if uid==ADMIN_ID and data.act=='reset':raise HTTPException(400,'Нельзя сбросить администратора')
     with session(write=True) as db:
         if not db.execute('SELECT 1 FROM players WHERE telegram_id=?',(uid,)).fetchone():raise HTTPException(404,'Игрок не найден')
-        tables={'clear_bag':['fishing_fish','fishing_finds'],'end_cast':['fishing_sessions'],'reset':['fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered','fishing_sessions','fishing_catch_history','fishing_buffs','fishing_attempts','fishing_reward_claims']}[data.act]
+        tables={'clear_bag':['fishing_fish','fishing_finds','catches_v11'],'end_cast':['fishing_sessions'],'reset':['catches_v11','tanks_v11','fishing_migrations','fishing_progress','fishing_fish','fishing_finds','fishing_gear','fishing_cases','fishing_discovered','fishing_sessions','fishing_catch_history','fishing_buffs','fishing_attempts','fishing_reward_claims']}[data.act]
         for table in tables:db.execute(f'DELETE FROM {table} WHERE telegram_id=?',(uid,))
         if data.act=='reset':db.execute('UPDATE players SET coins=0,nickname=NULL WHERE telegram_id=?',(uid,));ensure_fishing(db,uid)
         audit(db,admin['id'],uid,data.act)
@@ -214,7 +224,7 @@ def cases(admin=Depends(admin_user)):
 @router.post('/cases/{key}')
 def save_case(key:str,data:CaseSettings,admin=Depends(admin_user)):
     if key not in CASE_BY_ID:raise HTTPException(404,'Кейс не найден')
-    if any(k not in GEAR_BY_ID or not math.isfinite(w) or w<0 or w>1000000 for k,w in data.weights.items()):raise HTTPException(400,'Некорректные веса наград')
+    if any(k not in GEAR_BY_ID or GEAR_BY_ID.get(k,{}).get('type')!=CASE_BY_ID[key]['type'] or not math.isfinite(w) or w<0 or w>1000000 for k,w in data.weights.items()):raise HTTPException(400,'Некорректные веса наград')
     valid={k:w for k,w in data.weights.items() if w>0}
     if not valid:raise HTTPException(400,'Нужна хотя бы одна награда с весом больше нуля')
     config=dict(price=data.price,enabled=data.enabled,items=list(valid),weights=list(valid.values()))
@@ -347,6 +357,7 @@ def grant_luck(uid:int,data:LuckGrant,admin=Depends(admin_user)):
     expires=time.time()+data.minutes*60 if data.multiplier>1 else 0
     with session(write=True) as db:
         if not db.execute('SELECT 1 FROM players WHERE telegram_id=?',(uid,)).fetchone():raise HTTPException(404,'Игрок не найден')
+        db.execute('INSERT INTO notices_v11(telegram_id,text,kind) VALUES (?,?,?)',(uid,f'Администратор установил удачу ×{data.multiplier}','moderator'))
         db.execute('INSERT INTO fishing_buffs VALUES (?,?,?) ON CONFLICT(telegram_id) DO UPDATE SET multiplier=excluded.multiplier,expires_at=excluded.expires_at',(uid,data.multiplier,expires))
         audit(db,admin['id'],uid,'luck',f'x{data.multiplier}, {data.minutes} мин., до {int(expires)}')
     return player_card(uid,admin)
