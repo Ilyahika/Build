@@ -173,3 +173,16 @@ def top(kind:str='level',user=Depends(current_user)):
             order='COALESCE(f.xp,0)' if kind=='level' else 'p.coins'
             rows=[{**dict(r),'level':level_info(r['xp'])['level']} for r in db.execute(f'SELECT p.telegram_id,p.nickname,p.telegram_name,p.coins,COALESCE(f.xp,0) xp,pr.prefix FROM players p JOIN bh b USING(telegram_id) LEFT JOIN fishing_progress f USING(telegram_id) LEFT JOIN profiles_v11 pr USING(telegram_id) WHERE b.blocked=0 ORDER BY {order} DESC,p.telegram_id LIMIT 50')]
     return dict(players=rows)
+
+
+@router.get('/admin/promos')
+def list_promos(admin=Depends(admin_user)):
+    with session() as db:
+        rows=db.execute('SELECT p.*, (SELECT COUNT(*) FROM promo_claims_v11 c WHERE c.code=p.code) AS claimed FROM promos_v11 p ORDER BY rowid DESC LIMIT 200').fetchall()
+    return {'promos':[dict(r) for r in rows]}
+
+@router.get('/admin/moderators')
+def list_moderators(admin=Depends(admin_user)):
+    with session() as db:
+        rows=db.execute('SELECT p.telegram_id,p.nickname,p.telegram_name,p.coins,b.avatar,b.last_seen,b.blocked,pr.prefix FROM profiles_v11 pr JOIN players p USING(telegram_id) JOIN bh b USING(telegram_id) WHERE pr.moderator=1 ORDER BY p.telegram_id').fetchall()
+    return {'players':[dict(r) for r in rows]}

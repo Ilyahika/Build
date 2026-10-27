@@ -110,6 +110,8 @@ for i,(key,name,price) in enumerate([('shore','Береговой',300),('lake',
 expand(FISH,GEAR,CASES,TIERS,LOCATIONS)
 from catalog_v11 import upgrade, RARITIES, TIERS
 upgrade(FISH,GEAR,CASES,LOCATIONS)
+from catalog_v12 import apply_art
+apply_art(FISH)
 FINDS=[]
 
 def level_info(xp):
