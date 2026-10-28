@@ -311,11 +311,11 @@ def equip(data:Equip,user:dict=Depends(current_user)):
 class CaseOpen(BaseModel):
     case_key:str
     revision:str|None=None
-    count:int=Field(default=1,ge=1,le=10)
+    count:int=Field(default=1,ge=1,le=5)
 
 @router.post('/case/open')
 def open_case(data:CaseOpen,user:dict=Depends(current_user)):
-    if data.count not in (1,3,5,10):raise HTTPException(400,'Выбери 1, 3, 5 или 10')
+    if data.count not in (1,3,5):raise HTTPException(400,'Выбери 1, 3 или 5')
     with session(write=True) as db:
         uid=user['id'];ensure_fishing(db,uid)
         case=next((c for c in weighted_cases(db,uid) if c['key']==data.case_key),None)
@@ -327,7 +327,7 @@ def open_case(data:CaseOpen,user:dict=Depends(current_user)):
         # No automatic selling: require enough space in the correct equipment category.
         category=case['type']
         occupied=db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_gear WHERE telegram_id=? AND gear_key IN ('+','.join('?' for _ in [g for g in GEAR if g['type']==category])+')',(uid,*[g['key'] for g in GEAR if g['type']==category])).fetchone()[0]
-        if occupied+data.count>5:raise HTTPException(409,'Недостаточно места: максимум 5 предметов этого типа. Освободи место перед открытием')
+        if occupied+data.count>6:raise HTTPException(409,'Недостаточно места: максимум 6 предметов этого типа. Освободи место перед открытием')
         db.execute('UPDATE players SET coins=coins-? WHERE telegram_id=?',(cost,uid))
         if free:db.execute('UPDATE fishing_cases SET amount=amount-? WHERE telegram_id=? AND case_key=?',(free,uid,data.case_key))
         rewards=[]
