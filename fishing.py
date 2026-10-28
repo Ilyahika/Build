@@ -200,7 +200,7 @@ def snapshot(db, uid: int) -> dict:
         pool,weights=fish_pool(loc['key'],equipment,buff);total=sum(weights)
         odds[loc['key']]=[{**f,'chance':w/total*100} for f,w in zip(pool,weights)]
     return {
-        **__import__('features_v11').extra_state(db,uid),'attempts':attempt_state(db,uid),'rewards':reward_state(db,uid),'best_kg':db.execute('SELECT COALESCE(MAX(kg),0) FROM fishing_catch_history WHERE telegram_id=?',(uid,)).fetchone()[0], 'player':player, 'level':level_info(p['xp']), 'active':active,'buff':buff,'loadout':loadout(equipment,GEAR_BY_ID),'fish_odds':odds, 'server_time':time.time(),
+        **__import__('features_v11').extra_state(db,uid),'attempts':attempt_state(db,uid),'rewards':reward_state(db,uid),'location_records':{r['location']:{'fish':FISH_BY_ID.get(r['fish_key'],{}).get('name','Рыба'),'rarity':r['rarity'],'kg':r['kg']} for r in db.execute('SELECT location,fish_key,rarity,kg FROM viva_location_records WHERE telegram_id=?',(uid,))},'best_kg':db.execute('SELECT COALESCE(MAX(kg),0) FROM fishing_catch_history WHERE telegram_id=?',(uid,)).fetchone()[0], 'player':player, 'level':level_info(p['xp']), 'active':active,'buff':buff,'loadout':loadout(equipment,GEAR_BY_ID),'fish_odds':odds, 'server_time':time.time(),
         'progress': {'xp':p['xp'], 'equipment':{k:p[k] for k in ['rod','tackle','reel']}, 'casts':p['casts'], 'catches':caught, 'last_cast':p['last_cast'],
                      'cooldown_seconds':COOLDOWN_SECONDS, 'rod':p['rod'], 'tackle':p['tackle']},
         'fish': inventory(db, 'fishing_fish', uid, FISH_BY_ID),
@@ -277,6 +277,11 @@ def tick(data:Tick,user:dict=Depends(current_user)):
                 db.execute("INSERT INTO catches_v11(telegram_id,fish_key,kg,place) VALUES (?,?,?,'bag')",(uid,fish['key'],b['kg']))
                 db.execute('INSERT INTO fishing_catch_history(telegram_id,fish_key,kg,ts) VALUES (?,?,?,?)',(uid,fish['key'],b['kg'],int(now)))
                 db.execute('INSERT OR IGNORE INTO fishing_discovered VALUES (?,?)',(uid,fish['key']))
+                # Track the rarest caught fish per location, then heaviest within the same rarity.
+                destination=fish['location']
+                existing=db.execute('SELECT rarity,kg FROM viva_location_records WHERE telegram_id=? AND location=?',(uid,destination)).fetchone()
+                if not existing or (TIERS.index(fish['rarity']), b['kg'])>(TIERS.index(existing['rarity']) if existing['rarity'] in TIERS else -1, existing['kg']):
+                    db.execute('INSERT INTO viva_location_records(telegram_id,location,fish_key,rarity,kg,ts) VALUES(?,?,?,?,?,?) ON CONFLICT(telegram_id,location) DO UPDATE SET fish_key=excluded.fish_key,rarity=excluded.rarity,kg=excluded.kg,ts=excluded.ts',(uid,destination,fish['key'],fish['rarity'],b['kg'],int(now)))
                 xp=25+TIERS.index(fish['rarity'])*20+int(b['kg']*2);b['xp']=xp
                 db.execute('UPDATE fishing_progress SET catches=catches+1,xp=xp+? WHERE telegram_id=?',(xp,uid))
         db.execute('UPDATE fishing_sessions SET payload=?,finished=? WHERE telegram_id=?',(json.dumps(b),int(b['done']),uid))

@@ -1,0 +1,19 @@
+/* Viva.Beta.V1: final visual integration */
+:root{--v18-blue:#40c9ec;--v18-gold:#f7cd7b;--v18-red:#942c38}
+#view{scroll-margin-top:18px}#view button{touch-action:manipulation}#view button:focus-visible,#nav button:focus-visible{outline:2px solid #fbd68c;outline-offset:3px}
+.v18-record{display:flex;flex-direction:column;gap:5px;margin:10px 0 14px;padding:13px 16px;border:1px solid #cda45555;border-radius:14px;background:linear-gradient(115deg,#30251a,#142d37);box-shadow:inset 0 1px #fff2}
+.v18-record small{font-weight:900;letter-spacing:.12em;font-size:10px;color:#deb77d}.v18-record strong{font-size:16px;color:#ffdfab}.v18-record span{font-size:12px;color:#adc5cd}
+.v18-case-page .v18-odds{overflow:hidden;border-color:#3c7482}.v18-case-page .v18-odds[open] .odds-row{animation:v18-appear .25s ease both;animation-delay:calc(var(--index)*20ms)}.v18-open-btn{background:linear-gradient(105deg,#168fb1,#40c6e2)!important;box-shadow:0 6px 23px #00a3db33;font-weight:900;min-height:51px}
+.v16-prize.premium{background:radial-gradient(ellipse at 95% 3%,#e5ac4525,transparent 60%),linear-gradient(138deg,#6c1b2d,#320d1c);border:1px solid #d4a4578a;box-shadow:inset 0 1px #ffdf8728,0 5px 17px #0003}
+.v16-prize.basic{background:linear-gradient(140deg,#20576d,#0d2c42);border:1px solid #4ebdd66b}
+.v16-pass-row.available .v16-prize.premium{box-shadow:0 0 18px #be703023,inset 0 1px #ffe29c33}
+.v16-pass-row.available .v16-prize.basic{box-shadow:0 0 15px #35c0d520}
+.v16-shop-hero,.v16-upgrade,.v16-product,.v16-pack{box-shadow:0 10px 30px #00121f3a}
+.v16-pack:focus-visible{outline:2px solid #ffd28a}.v16-pack:active{transform:scale(.975)}.v16-prize .v16-claim:not(:disabled):active{transform:scale(.97)}
+.v18-enter{animation:v18-appear .38s cubic-bezier(.2,.8,.2,1) both;animation-delay:var(--delay,0ms)}.v18-soft-enter{animation:v18-appear .33s ease-out both}
+.batch-v13-item.revealed:is(.rarity-legendary,.rarity-mythic,.rarity-secret,.rarity-exclusive,.rarity-absolute){filter:drop-shadow(0 0 13px #ffd47a99);animation:v18-legend 1.6s ease-in-out infinite alternate}
+.film-result-card:is(.rarity-legendary,.rarity-mythic,.rarity-secret,.rarity-exclusive,.rarity-absolute){box-shadow:0 0 24px #e9b96a77,0 0 65px #d8a75a35;border-color:#f2c46d}
+.v18-admin .ac-btn,.v18-admin button{transition:filter .18s,transform .18s}.v18-admin button:active{transform:scale(.98)}
+@keyframes v18-appear{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}@keyframes v18-legend{from{filter:drop-shadow(0 0 5px #f0b55a66)}to{filter:drop-shadow(0 0 22px #fcd77fcc)}}
+@media(max-width:350px){.v16-prize{padding:9px 5px}.v16-pass-row,.v16-lane-head{grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr)}.v16-level span{width:31px;height:31px}.v16-rewards{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.v18-enter,.v18-soft-enter,.v18-case-page .v18-odds[open] .odds-row,.batch-v13-item.revealed{animation:none!important}*{scroll-behavior:auto!important}}

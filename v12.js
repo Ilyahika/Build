@@ -88,8 +88,8 @@ function drawCatchScene(ctx,W,H,theme,t,p){
   const handX=145+Math.sin(t*2.6)*9,handY=-235-Math.sin(t*2.6)*6-climax*14;
   line([[-49,-260],[17,-218],[handX-8,handY+10]],o.coat,27);line([[49,-259],[105,-238],[handX,handY]],o.coat,23);ellipse(handX,handY,12,11,'#bb916c');ellipse(handX-12,handY+12,10,9,'#b88b64');
   line([[handX-24,handY+36],[handX+18,handY-28]],'#332e29',11);
-  const tipX=390+Math.sin(t*2.6)*22,tipY=-510+Math.sin(t*2.6)*15+mode*3;
-  ctx.strokeStyle='#ddd4ad';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(handX,handY);ctx.quadraticCurveTo(300,-570,tipX,tipY);ctx.stroke();ctx.strokeStyle='#718c91';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(handX+2,handY);ctx.quadraticCurveTo(302,-564,tipX+1,tipY);ctx.stroke();
+  const strain=(.18+mode*.13)*(1+climax*1.9),tipX=390+Math.sin(t*2.6)*22-strain*45,tipY=-510+Math.sin(t*2.6)*15+strain*105;
+  ctx.strokeStyle='#ddd4ad';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(handX,handY);ctx.quadraticCurveTo(300-strain*58,-570+strain*64,tipX,tipY);ctx.stroke();ctx.strokeStyle='#718c91';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(handX+2,handY);ctx.quadraticCurveTo(302-strain*58,-564+strain*64,tipX+1,tipY);ctx.stroke();
   ctx.strokeStyle='#d3e9e7';ctx.lineWidth=1;ctx.globalAlpha=.8;ctx.beginPath();ctx.moveTo(tipX,tipY);ctx.quadraticCurveTo(470,-330,poolX-270,poolY-790);ctx.stroke();ctx.globalAlpha=1;ellipse(handX+3,handY+15,12,12,'#a2a7a6');ellipse(handX+3,handY+15,7,7,'#33444e');ctx.restore();
   // Reeds in foreground.
   for(let i=0;i<12;i++){let x=20+i*13;line([[x,900],[x-12+Math.sin(t+i)*4,815-(i%3)*18]],'#2e5753',3);}

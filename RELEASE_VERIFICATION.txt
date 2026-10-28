@@ -1,0 +1,8 @@
+VIVA BETA V1 - BUILD VERIFICATION (2026-10-28)
+PASS: Python compileall for all .py source files.
+PASS: node --check for all JavaScript files.
+PASS: All 18 HTML-referenced local script/style assets exist and are permitted by FastAPI's static route.
+PASS: Added persistent viva_location_records table (migration on startup).
+NOT RUN: End-to-end FastAPI/Telegram integration tests. aiogram is not installed in this build environment; downloading packages is unavailable.
+NOT RUN: Real Telegram Stars payments or chat delivery of backup. Require a running configured Telegram bot.
+See DEPLOY_BETA_V1.md for live rollout checks and limitations.
