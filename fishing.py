@@ -319,15 +319,17 @@ def open_case(data:CaseOpen,user:dict=Depends(current_user)):
         owned=db.execute('SELECT amount FROM fishing_cases WHERE telegram_id=? AND case_key=?',(uid,data.case_key)).fetchone()
         free=min(data.count,owned[0] if owned else 0);cost=(data.count-free)*case['price']
         if db.execute('SELECT coins FROM players WHERE telegram_id=?',(uid,)).fetchone()[0]<cost:raise HTTPException(409,'Недостаточно долларов')
+        # No automatic selling: require enough space in the correct equipment category.
+        category=case['type']
+        occupied=db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_gear WHERE telegram_id=? AND gear_key IN ('+','.join('?' for _ in [g for g in GEAR if g['type']==category])+')',(uid,*[g['key'] for g in GEAR if g['type']==category])).fetchone()[0]
+        if occupied+data.count>5:raise HTTPException(409,'Недостаточно места: максимум 5 предметов этого типа. Освободи место перед открытием')
         db.execute('UPDATE players SET coins=coins-? WHERE telegram_id=?',(cost,uid))
         if free:db.execute('UPDATE fishing_cases SET amount=amount-? WHERE telegram_id=? AND case_key=?',(free,uid,data.case_key))
         rewards=[]
         for _ in range(data.count):
             g=GEAR_BY_ID[RNG.choices(case['items'],weights=case['weights'])[0]]
-            full=db.execute('SELECT COALESCE(SUM(amount),0) FROM fishing_gear WHERE telegram_id=? AND amount>0',(uid,)).fetchone()[0]>=20
-            if full:db.execute('UPDATE players SET coins=coins+? WHERE telegram_id=?',(g['sell_price'],uid))
-            else:add_item(db,'fishing_gear',uid,g['key'])
-            rewards.append(dict(reward=g,auto_sold=full,compensation=g['sell_price'] if full else 0))
+            add_item(db,'fishing_gear',uid,g['key'])
+            rewards.append(dict(reward=g,auto_sold=False,compensation=0))
         db.execute('UPDATE fishing_progress SET xp=xp+? WHERE telegram_id=?',(35*data.count,uid))
         db.execute('INSERT INTO fishing_cases(telegram_id,case_key,opened) VALUES (?,?,?) ON CONFLICT(telegram_id,case_key) DO UPDATE SET opened=opened+excluded.opened',(uid,data.case_key,data.count))
         return dict(rewards=rewards,state=snapshot(db,uid))

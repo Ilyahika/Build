@@ -40,7 +40,7 @@ def migrate_inventory(db,uid):
 def fish_value(f,kg):return max(1,round(f['value']*kg))
 def catch_rows(db,uid,place):
     from fishing import FISH_BY_ID,TIERS
-    return [{**FISH_BY_ID[r['fish_key']],**dict(r),'value':fish_value(FISH_BY_ID[r['fish_key']],r['kg']),'hourly':round(fish_value(FISH_BY_ID[r['fish_key']],r['kg'])*(.015+.005*TIERS.index(FISH_BY_ID[r['fish_key']]['rarity'])),4)} for r in db.execute('SELECT * FROM catches_v11 WHERE telegram_id=? AND place=? ORDER BY id DESC',(uid,place)) if r['fish_key'] in FISH_BY_ID]
+    return [{**FISH_BY_ID[r['fish_key']],**dict(r),'value':fish_value(FISH_BY_ID[r['fish_key']],r['kg']),'hourly':round(fish_value(FISH_BY_ID[r['fish_key']],r['kg'])*.03,4)} for r in db.execute('SELECT * FROM catches_v11 WHERE telegram_id=? AND place=? ORDER BY id DESC',(uid,place)) if r['fish_key'] in FISH_BY_ID]
 def tank_state(db,uid):
     r=db.execute('SELECT * FROM tanks_v11 WHERE telegram_id=?',(uid,)).fetchone();fish=catch_rows(db,uid,'tank');rate=sum(f['hourly'] for f in fish);elapsed=max(0,min(time.time(),r['deadline'])-r['anchor'])
     return dict(fish=fish,rate=rate,balance=r['balance']+elapsed*rate/3600,anchor=r['anchor'],cap_at=r['deadline'],server_time=time.time())
@@ -168,10 +168,10 @@ def top(kind:str='level',user=Depends(current_user)):
             for r in db.execute('SELECT h.*,p.nickname,p.telegram_name,pr.prefix FROM fishing_catch_history h JOIN players p USING(telegram_id) JOIN bh b USING(telegram_id) LEFT JOIN profiles_v11 pr USING(telegram_id) WHERE b.blocked=0'):
                 f=FISH_BY_ID.get(r['fish_key'])
                 if f and (r['telegram_id'] not in records or (TIERS.index(f['rarity']),r['kg'])>records[r['telegram_id']]['score']):records[r['telegram_id']]={**dict(r),'fish_name':f['name'],'rarity':f['rarity'],'score':(TIERS.index(f['rarity']),r['kg'])}
-            rows=sorted(records.values(),key=lambda r:r['score'],reverse=True)[:50]
+            rows=sorted(records.values(),key=lambda r:r['score'],reverse=True)[:10]
         else:
             order='COALESCE(f.xp,0)' if kind=='level' else 'p.coins'
-            rows=[{**dict(r),'level':level_info(r['xp'])['level']} for r in db.execute(f'SELECT p.telegram_id,p.nickname,p.telegram_name,p.coins,COALESCE(f.xp,0) xp,pr.prefix FROM players p JOIN bh b USING(telegram_id) LEFT JOIN fishing_progress f USING(telegram_id) LEFT JOIN profiles_v11 pr USING(telegram_id) WHERE b.blocked=0 ORDER BY {order} DESC,p.telegram_id LIMIT 50')]
+            rows=[{**dict(r),'level':level_info(r['xp'])['level']} for r in db.execute(f'SELECT p.telegram_id,p.nickname,p.telegram_name,p.coins,COALESCE(f.xp,0) xp,pr.prefix FROM players p JOIN bh b USING(telegram_id) LEFT JOIN fishing_progress f USING(telegram_id) LEFT JOIN profiles_v11 pr USING(telegram_id) WHERE b.blocked=0 ORDER BY {order} DESC,p.telegram_id LIMIT 10')]
     return dict(players=rows)
 
 

@@ -23,6 +23,7 @@ import botapp
 import fishing
 import community
 import features_v11
+import v14
 from config import BOT_TOKEN, CORS_ORIGINS, ROOT, VERSION, WEBAPP_URL
 from db import init_db, session, checkpoint_db
 from auth import signed_user, register
@@ -105,13 +106,14 @@ def system_status(user: dict = Depends(signed_user)):
 
 # --------------------------------------------------------------------- API
 app.include_router(features_v11.router)
+app.include_router(v14.router)
 app.include_router(community.router)
 app.include_router(fishing.router)      # рыбалка, снасти, инвентарь и кейсы
 app.include_router(admin.router)        # админ-панель
 
 # --------------------------------------------------------------------- интерфейс
 # Отдаём только перечисленные файлы — исходники сервера (main.py и т.д.) не выставляются наружу
-STATIC = {'v13.js':'application/javascript','v13.css':'text/css','v12.js':'application/javascript','admin_v12.js':'application/javascript','v12.css':'text/css','v11.js':'application/javascript','style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js':'application/javascript'}
+STATIC = {'v14.js':'application/javascript','v14.css':'text/css','v13.js':'application/javascript','v13.css':'text/css','v12.js':'application/javascript','admin_v12.js':'application/javascript','v12.css':'text/css','v11.js':'application/javascript','style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js':'application/javascript'}
 # no-cache = «всегда сверяйся с сервером»; благодаря ETag неизменный файл отдаётся как 304 без тела
 NO_CACHE = {'Cache-Control': 'no-cache'}
 

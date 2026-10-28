@@ -203,6 +203,8 @@ def init_db() -> None:
                     conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
                     log.info('Миграция: %s.%s добавлена', table, column)
         conn.execute("DELETE FROM cars WHERE car NOT GLOB '[0-9]*'")   # мусор от старых версий
+        from v14 import migrate as migrate_v14
+        migrate_v14(conn)
         conn.executescript(INDEXES)
     finally:
         conn.close()
