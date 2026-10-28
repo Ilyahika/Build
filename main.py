@@ -113,7 +113,7 @@ app.include_router(admin.router)        # админ-панель
 
 # --------------------------------------------------------------------- интерфейс
 # Отдаём только перечисленные файлы — исходники сервера (main.py и т.д.) не выставляются наружу
-STATIC = {'v14.js':'application/javascript','v14.css':'text/css','v13.js':'application/javascript','v13.css':'text/css','v12.js':'application/javascript','admin_v12.js':'application/javascript','v12.css':'text/css','v11.js':'application/javascript','style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js':'application/javascript'}
+STATIC = {'v15.js':'application/javascript','v15.css':'text/css','v14.js':'application/javascript','v14.css':'text/css','v13.js':'application/javascript','v13.css':'text/css','v12.js':'application/javascript','admin_v12.js':'application/javascript','v12.css':'text/css','v11.js':'application/javascript','style.css': 'text/css', 'app.js': 'application/javascript', 'admin.js':'application/javascript'}
 # no-cache = «всегда сверяйся с сервером»; благодаря ETag неизменный файл отдаётся как 304 без тела
 NO_CACHE = {'Cache-Control': 'no-cache'}
 

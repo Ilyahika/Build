@@ -186,3 +186,22 @@ def list_moderators(admin=Depends(admin_user)):
     with session() as db:
         rows=db.execute('SELECT p.telegram_id,p.nickname,p.telegram_name,p.coins,b.avatar,b.last_seen,b.blocked,pr.prefix FROM profiles_v11 pr JOIN players p USING(telegram_id) JOIN bh b USING(telegram_id) WHERE pr.moderator=1 ORDER BY p.telegram_id').fetchall()
     return {'players':[dict(r) for r in rows]}
+
+class ReleaseFish(BaseModel):
+    id:int=Field(gt=0)
+
+@router.post('/fish/release')
+def release_fish(data:ReleaseFish,user=Depends(current_user)):
+    """Give a modest amount of experience for releasing a caught fish."""
+    from fishing import snapshot,ensure_fishing
+    uid=user['id']
+    with session(write=True) as db:
+        ensure_fishing(db,uid)
+        caught=next((f for f in catch_rows(db,uid,'bag') if f['id']==data.id),None)
+        if not caught:raise HTTPException(404,'Рыба не найдена в подсаке')
+        # Intentionally smaller than earnings from selling or catching.
+        xp=min(12,max(2,2+int(caught['value']**0.25)))
+        db.execute('DELETE FROM catches_v11 WHERE id=? AND telegram_id=? AND place=?',(data.id,uid,'bag'))
+        db.execute('UPDATE fishing_fish SET amount=MAX(0,amount-1) WHERE telegram_id=? AND item_key=?',(uid,caught['key']))
+        db.execute('UPDATE fishing_progress SET xp=xp+? WHERE telegram_id=?',(xp,uid))
+        return dict(xp=xp,state=snapshot(db,uid))

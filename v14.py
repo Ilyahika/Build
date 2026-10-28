@@ -49,7 +49,7 @@ def state(user=Depends(current_user)):
         w=wallet(db,uid); xp=db.execute('SELECT xp FROM fishing_progress WHERE telegram_id=?',(uid,)).fetchone()
         ref=db.execute('SELECT COUNT(*) FROM viva_referrals WHERE inviter=?',(uid,)).fetchone()[0]
         partner=db.execute('SELECT * FROM viva_partner WHERE uid=?',(uid,)).fetchone()
-        return dict(stars=w['stars'],vivip=bool(w['vivip']),pass_claim=w['pass_claim'],vip_claim=w['vip_claim'],pass_level=min(30,level_info(xp[0] if xp else 0)['level']),referrals=ref,sections={x['section']:bool(x['enabled']) for x in db.execute('SELECT * FROM viva_section_maintenance')},ref_inviter=int(config(db,'ref_inviter')),ref_invited=int(config(db,'ref_invited')),starter=dict(price=int(config(db,'starter_stars')),coins=int(config(db,'starter_coins')),xp=int(config(db,'starter_xp')),enabled=config(db,'starter_enabled')=='1'),partner=dict(partner) if partner else None)
+        return dict(stars=w['stars'],vivip=bool(w['vivip']),pass_claim=w['pass_claim'],vip_claim=w['vip_claim'],pass_level=min(30,level_info(xp[0] if xp else 0)['level']),referrals=ref,pass_rewards=[{'level':i, 'free':pass_reward(i,False), 'premium':pass_reward(i,True)} for i in range(1,31)],sections={x['section']:bool(x['enabled']) for x in db.execute('SELECT * FROM viva_section_maintenance')},ref_inviter=int(config(db,'ref_inviter')),ref_invited=int(config(db,'ref_invited')),starter=dict(price=int(config(db,'starter_stars')),coins=int(config(db,'starter_coins')),xp=int(config(db,'starter_xp')),enabled=config(db,'starter_enabled')=='1'),partner=dict(partner) if partner else None)
 
 class Invite(BaseModel):inviter:int
 @router.post('/referral')
@@ -212,21 +212,31 @@ async def invoice(amount:int,user=Depends(current_user)):
     except Exception:raise HTTPException(503,'Не удалось создать счёт в Telegram')
     return {'url':link}
 
-@router.get('/admin/backup')
-def backup(admin=Depends(admin_user)):
-    from fastapi.responses import Response
-    source=sqlite3.connect(str(DB_PATH));copy=sqlite3.connect(':memory:')
+@router.post('/admin/backup')
+async def backup_to_admin_chat(admin=Depends(admin_user)):
+    """Snapshot active SQLite and deliver privately to the configured admin via Telegram."""
+    from aiogram.types import BufferedInputFile
+    from botapp import state as bot_state
+    if not bot_state.bot:
+        raise HTTPException(503, 'Бот не подключён. Проверь BOT_TOKEN и запусти бота.')
+    with tempfile.NamedTemporaryFile(suffix='.db') as f:
+        source=sqlite3.connect(str(DB_PATH)); dest=sqlite3.connect(f.name)
+        try:
+            source.backup(dest)
+        finally:
+            dest.close(); source.close()
+        payload=Path(f.name).read_bytes()
     try:
-        source.backup(copy)
-        with tempfile.NamedTemporaryFile(suffix='.db',delete=False) as f: temp=f.name
-        dest=sqlite3.connect(temp)
-        try:copy.backup(dest)
-        finally:dest.close()
-        payload=Path(temp).read_bytes()
-    finally:
-        source.close();copy.close()
-        if 'temp' in locals():Path(temp).unlink(missing_ok=True)
-    return Response(content=payload,media_type='application/x-sqlite3',headers={'Content-Disposition':'attachment; filename="viva-backup.db"','Cache-Control':'no-store'})
+        await bot_state.bot.send_document(
+            chat_id=ADMIN_ID,
+            document=BufferedInputFile(payload, filename='viva-backup.db'),
+            caption='💾 Актуальная резервная копия базы Viva. Храни файл в безопасном месте.'
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger('viva.backup').exception('Failed to send DB backup to admin')
+        raise HTTPException(502, 'Не получилось отправить базу. Открой личный чат с ботом, нажми /start и попробуй снова.') from exc
+    return {'ok': True, 'message': '✅ База отправлена в личный чат администратора с ботом.'}
 
 @router.post('/admin/backup/stage')
 async def stage_backup(request: Request,admin=Depends(admin_user)):
